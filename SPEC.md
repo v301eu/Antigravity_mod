@@ -91,13 +91,14 @@ Niezależnie od trybu **A**, **domyślnie włączony** jest automatyczny odczyt 
 ## 5. Załączniki i automatyczne kompaktowanie
 
 1. Każde dodanie załącznika do wiadomości — wklejenie wycinka z ikony **C**, zrzutu PrintScreen, pliku lub obrazu dołączonego komendą głosową — oznacza wiadomość jako „z załącznikiem”.
-2. Po wysłaniu takiej wiadomości rozszerzenie automatycznie wykonuje **komendę kompaktowania** właściwą dla aktywnego pluginu (tabela §0.4), aby obraz nie był ponownie przesyłany w kolejnych zapytaniach i nie zużywał tokenów.
+2. Po wysłaniu takiej wiadomości rozszerzenie czeka, aż model główny **zakończy odpowiedź**, i dopiero wtedy wysyła **komendę kompaktowania** właściwą dla aktywnego pluginu (tabela §0.4) jako **osobną wiadomość**. Dzięki temu obraz nie jest ponownie przesyłany w kolejnych zapytaniach i nie zużywa tokenów.
+3. Komendy kompaktowania nie dopisuje się na końcu wiadomości z załącznikiem: plugin rozpoznaje komendę tylko wtedy, gdy cała wiadomość zaczyna się od `/`. Gdyby nawet zadziałała, skompaktowałaby rozmowę, zanim model zdąży przeanalizować obraz.
 
 ---
 
 ## 6. Otwarte pytania (do rozstrzygnięcia przed implementacją)
 
-1. **Kiedy dokładnie wywołać `/compact`?** W Claude Code (i najpewniej w Codex) komenda działa tylko jako **osobna wiadomość** — dopisana na końcu tekstu zostanie wysłana jako zwykły tekst. Proponuję: wysłać wiadomość → poczekać, aż model główny **skończy odpowiadać** → wysłać `/compact` jako osobną wiadomość. Zgoda?
+1. ~~**Kiedy dokładnie wywołać `/compact`?**~~ **Rozstrzygnięte** — osobna wiadomość po zakończeniu odpowiedzi modelu (patrz §5).
 2. **Polski głos naturalny offline.** Na tym komputerze zainstalowany jest tylko *Microsoft Ryan* (naturalny, en-GB). Nie jestem pewien, czy Microsoft udostępnia naturalny polski głos *Marek* w wersji offline (do Narratora); wersja *Marek Neural* istnieje na pewno w usługach online (Edge/Azure). Jeśli offline nie ma — co wybieramy: głos online, czy ciszę z komunikatem? Obecnie kod dla polskiego używa **Piper**, co łamie zasadę §0.3.
 3. **„Auto TTS w trakcie pisania” (§4.2)** — czy czytać każde zdanie zaraz po jego zakończeniu, czy cały tekst dopiero po dyktowaniu/korekcie?
 4. **Pytanie modelu w polu wprowadzania** — gdy użytkownik zacznie odpowiadać, czy pytanie ma zostać **zastąpione** odpowiedzią, czy odpowiedź ma być **dopisana** pod pytaniem?

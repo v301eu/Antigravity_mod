@@ -928,7 +928,8 @@ async function activate(context) {
         const msg = `chore(auto): update ${changedFiles || "workspace files"}`;
 
         cp.exec(
-          `git add -A && git commit -m "${msg.replace(/"/g, "'")}" && git push`,
+          // Pull others' pushes (e.g. a parallel agent) before pushing, so pushes are not rejected and nothing is overwritten.
+          `git add -A && git commit -m "${msg.replace(/"/g, "'")}" && git pull --rebase --autostash && git push`,
           { cwd: folderPath, windowsHide: true, timeout: 45000 },
           (pushErr) => {
             gitSyncRunning = false;

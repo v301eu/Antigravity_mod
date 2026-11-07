@@ -1,4 +1,4 @@
-﻿param(
+param(
     [int]$WhisperPort = 18971,
     [switch]$CompileOnly
 )

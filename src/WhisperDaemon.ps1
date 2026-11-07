@@ -149,22 +149,23 @@ public static class WhisperNative {
             } catch {}
 
             try {
-                Clipboard.SetText(text, TextDataFormat.UnicodeText);
-                Thread.Sleep(45);
+                string toPaste = replaceExisting ? text : (text.Trim() + " ");
+                Clipboard.SetText(toPaste, TextDataFormat.UnicodeText);
+                Thread.Sleep(55);
 
                 if (replaceExisting) {
                     SendKeyCombo(VK_CONTROL, VK_A);
-                    Thread.Sleep(35);
+                    Thread.Sleep(45);
                 }
 
                 SendKeyCombo(VK_CONTROL, VK_V);
 
                 if (submitEnter) {
-                    Thread.Sleep(150);
+                    Thread.Sleep(180);
                     SendSingleKey(VK_RETURN);
                 }
 
-                Thread.Sleep(140);
+                Thread.Sleep(220);
             } catch {}
 
             try {

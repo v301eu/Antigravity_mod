@@ -1,4 +1,4 @@
-param(
+﻿param(
     [int]$WhisperPort = 18971,
     [switch]$CompileOnly
 )
@@ -566,8 +566,8 @@ public class RamWaveRecorder : IDisposable {
                         _vadSilenceChunks++;
                     }
 
-                    // Slice phrase on 600ms natural pause (6 chunks) or after 7.0s of continuous speech
-                    if (_vadSilenceChunks >= 6 || _vadPcm.Length >= SAMPLE_RATE * 2 * 7) {
+                    // Slice phrase on 400ms natural pause (4 chunks) or after 4.5s of continuous speech for bilingual real-time streaming
+                    if (_vadSilenceChunks >= 4 || _vadPcm.Length >= SAMPLE_RATE * 2 * 9 / 2) {
                         byte[] rawVad = _vadPcm.ToArray();
                         int spChunks = _vadSpeechChunks;
                         _vadPcm.Dispose();
@@ -575,7 +575,7 @@ public class RamWaveRecorder : IDisposable {
                         _vadInSpeech = false;
                         _vadSpeechChunks = 0;
                         _vadSilenceChunks = 0;
-                        if (spChunks >= 3 && rawVad.Length >= 4800) {
+                        if (spChunks >= 2 && rawVad.Length >= 3200) {
                             finishedVadWav = WrapPcmMono16kAsWav(rawVad);
                         }
                     }
@@ -607,11 +607,21 @@ public class RamWaveRecorder : IDisposable {
                 if (mode == "auto") {
                     WriteJsonEvent("{\"event\":\"vadProcessing\"}");
                 }
-                string rawJson = PostWavToWhisperRam(WhisperPort, wavBytes);
-                string text = ExtractWhisperText(rawJson);
+                List<byte[]> subWavs = SplitWavOnMicroPauses(wavBytes);
+                StringBuilder fullText = new StringBuilder();
+                string lastLang = "pl";
+                foreach (byte[] sw in subWavs) {
+                    string rawJson = PostWavToWhisperRam(WhisperPort, sw);
+                    string partText = ExtractWhisperText(rawJson);
+                    if (!string.IsNullOrWhiteSpace(partText)) {
+                        if (fullText.Length > 0) fullText.Append(" ");
+                        fullText.Append(partText);
+                        lastLang = DetectIsoLang(rawJson, partText);
+                    }
+                }
+                string text = fullText.ToString().Trim();
                 if (!string.IsNullOrWhiteSpace(text)) {
-                    string lang = DetectIsoLang(text);
-                    WriteJsonEvent("{\"event\":\"transcription\",\"text\":\"" + EscapeJson(text) + "\",\"lang\":\"" + lang + "\",\"mode\":\"" + EscapeJson(mode) + "\"}");
+                    WriteJsonEvent("{\"event\":\"transcription\",\"text\":\"" + EscapeJson(text) + "\",\"lang\":\"" + lastLang + "\",\"mode\":\"" + EscapeJson(mode) + "\"}");
                 } else if (mode == "manual") {
                     WriteJsonEvent("{\"event\":\"micIdle\",\"reason\":\"empty\"}");
                 }
@@ -619,6 +629,72 @@ public class RamWaveRecorder : IDisposable {
                 WriteJsonEvent("{\"event\":\"error\",\"source\":\"whisper\",\"message\":\"" + EscapeJson(ex.Message) + "\"}");
             }
         });
+    }
+
+    public static List<byte[]> SplitWavOnMicroPauses(byte[] wavBytes) {
+        List<byte[]> result = new List<byte[]>();
+        if (wavBytes == null || wavBytes.Length <= 44 + SAMPLE_RATE * 2 * 2) {
+            if (wavBytes != null) result.Add(wavBytes);
+            return result;
+        }
+        int pcmLen = wavBytes.Length - 44;
+        byte[] pcm = new byte[pcmLen];
+        Buffer.BlockCopy(wavBytes, 44, pcm, 0, pcmLen);
+
+        // Compute adaptive silence threshold from 20ms frames (640 bytes)
+        int frameBytes = 640; // 20ms at 16kHz 16-bit mono
+        int totalFrames = pcmLen / frameBytes;
+        if (totalFrames < 60) {
+            result.Add(wavBytes);
+            return result;
+        }
+        double[] frameRms = new double[totalFrames];
+        double maxRms = 0;
+        for (int f = 0; f < totalFrames; f++) {
+            double sumSq = 0;
+            int baseIdx = f * frameBytes;
+            for (int i = 0; i < frameBytes; i += 2) {
+                short s = (short)(pcm[baseIdx + i] | (pcm[baseIdx + i + 1] << 8));
+                sumSq += (double)s * s;
+            }
+            frameRms[f] = Math.Sqrt(sumSq / (frameBytes / 2));
+            if (frameRms[f] > maxRms) maxRms = frameRms[f];
+        }
+        double silenceThresh = Math.Max(15.0, maxRms * 0.08);
+        int segStartFrame = 0;
+        int quietFrames = 0;
+        int voicedFrames = 0;
+
+        for (int f = 0; f < totalFrames; f++) {
+            if (frameRms[f] > silenceThresh) {
+                voicedFrames++;
+                quietFrames = 0;
+            } else {
+                quietFrames++;
+                // Split if we have at least 0.8s (40 frames) of voiced speech followed by >= 180ms (9 frames) of pause
+                if (voicedFrames >= 25 && quietFrames >= 9 && (f - segStartFrame) >= 40) {
+                    int byteStart = segStartFrame * frameBytes;
+                    int byteCount = (f - segStartFrame + 1) * frameBytes;
+                    byte[] segPcm = new byte[byteCount];
+                    Buffer.BlockCopy(pcm, byteStart, segPcm, 0, byteCount);
+                    result.Add(WrapPcmMono16kAsWav(segPcm));
+                    segStartFrame = f + 1;
+                    voicedFrames = 0;
+                    quietFrames = 0;
+                }
+            }
+        }
+        if (segStartFrame < totalFrames && voicedFrames >= 8) {
+            int byteStart = segStartFrame * frameBytes;
+            int byteCount = pcmLen - byteStart;
+            if (byteCount >= 3200) {
+                byte[] segPcm = new byte[byteCount];
+                Buffer.BlockCopy(pcm, byteStart, segPcm, 0, byteCount);
+                result.Add(WrapPcmMono16kAsWav(segPcm));
+            }
+        }
+        if (result.Count == 0) result.Add(wavBytes);
+        return result;
     }
 
     private static string ExtractWhisperText(string rawJson) {
@@ -666,10 +742,19 @@ public class RamWaveRecorder : IDisposable {
         return t;
     }
 
-    private static string DetectIsoLang(string sampleText) {
-        if (string.IsNullOrWhiteSpace(sampleText)) return "pl";
-        if (System.Text.RegularExpressions.Regex.IsMatch(sampleText, @"[\u0105\u0107\u0119\u0142\u0144\u00F3\u015B\u017A\u017C\u0104\u0106\u0118\u0141\u0143\u00D3\u015A\u0179\u017B]|\b(jest|nie|dla|czy|tak|jak|oraz|kod|teraz|to|w|na|z|i|do)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) {
-            return "pl";
+    private static string DetectIsoLang(string rawJson, string sampleText) {
+        if (!string.IsNullOrWhiteSpace(sampleText)) {
+            if (System.Text.RegularExpressions.Regex.IsMatch(sampleText, @"[\u0105\u0107\u0119\u0142\u0144\u00F3\u015B\u017A\u017C\u0104\u0106\u0118\u0141\u0143\u00D3\u015A\u0179\u017B]|\b(jest|nie|dla|czy|tak|jak|oraz|kod|teraz|po\s+polsku|wiadomo\u015Bci)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) {
+                return "pl";
+            }
+            if (System.Text.RegularExpressions.Regex.IsMatch(sampleText, @"\b(the|and|is|in|to|of|for|with|that|this|english|message|second|half)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) {
+                return "en";
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(rawJson)) {
+            if (rawJson.IndexOf("\"english\"", StringComparison.OrdinalIgnoreCase) >= 0 || rawJson.IndexOf("\"en\"", StringComparison.OrdinalIgnoreCase) >= 0) return "en";
+            if (rawJson.IndexOf("\"polish\"", StringComparison.OrdinalIgnoreCase) >= 0 || rawJson.IndexOf("\"pl\"", StringComparison.OrdinalIgnoreCase) >= 0) return "pl";
+            if (rawJson.IndexOf("\"german\"", StringComparison.OrdinalIgnoreCase) >= 0 || rawJson.IndexOf("\"de\"", StringComparison.OrdinalIgnoreCase) >= 0) return "de";
         }
         return "pl";
     }
@@ -829,7 +914,8 @@ public class RamWaveRecorder : IDisposable {
             ByteArrayContent bc = new ByteArrayContent(wavBytes);
             bc.Headers.ContentType = MediaTypeHeaderValue.Parse("audio/wav");
             mp.Add(bc, "file", "speech.wav");
-            mp.Add(new StringContent("json"), "response_format");
+            mp.Add(new StringContent("verbose_json"), "response_format");
+            mp.Add(new StringContent("auto"), "language");
             mp.Add(new StringContent("0.0"), "temperature");
             mp.Add(new StringContent("0.0"), "temperature_inc");
             HttpResponseMessage resp = _httpClient.PostAsync("http://127.0.0.1:" + port + "/inference", mp).GetAwaiter().GetResult();
@@ -1274,7 +1360,7 @@ Register-ObjectEvent -InputObject $clipTimer -EventName Elapsed -Action {
 } | Out-Null
 $clipTimer.Start()
 
-# Ensure ultra-fast whisper-server.exe (ggml-small-q5_1.bin) is running hidden in RAM
+# Ensure ultra-fast whisper-server.exe (ggml-small-q5_1.bin on AMD Radeon 780M Vulkan + CPU with -l auto) is running hidden in RAM
 try {
     $binDir = Join-Path (Split-Path $PSScriptRoot -Parent) "bin"
     $serverExe = Join-Path $binDir "whisper-server.exe"
@@ -1284,7 +1370,7 @@ try {
         $needStart = $true
         $existing = Get-CimInstance Win32_Process -Filter "Name = 'whisper-server.exe'" -ErrorAction SilentlyContinue
         foreach ($proc in $existing) {
-            if ($proc.CommandLine -match "ggml-small-q5_1\.bin" -and $proc.CommandLine -match "-ac 384") {
+            if ($proc.CommandLine -match "ggml-small-q5_1\.bin" -and $proc.CommandLine -match "-l auto") {
                 $needStart = $false
             } else {
                 Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
@@ -1294,7 +1380,7 @@ try {
             $psi = New-Object System.Diagnostics.ProcessStartInfo
             $psi.FileName = $serverExe
             $psi.WorkingDirectory = $binDir
-            $psi.Arguments = "-m `"$fastModel`" --host 127.0.0.1 --port $WhisperPort -l pl -nt -sns -nf -bo 1 -bs 1 -mc 0 -ac 384 -t 8"
+            $psi.Arguments = "-m `"$fastModel`" --host 127.0.0.1 --port $WhisperPort -l auto -nt -sns -nf -bo 1 -bs 1 -mc 0 -t 8"
             $psi.CreateNoWindow = $true
             $psi.UseShellExecute = $false
             [void][System.Diagnostics.Process]::Start($psi)

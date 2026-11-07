@@ -27,6 +27,10 @@
    - jeśli w tym momencie brakuje także Ryana, jedno potwierdzenie instaluje **oba głosy**;
    - dopóki głos danego języka nie jest zainstalowany (lub użytkownik odmówił), obowiązuje zasada §0.3.3 — tłumaczenie na angielski i odczyt głosem Ryan;
    - jeśli dla tego języka istnieje naturalny głos Microsoftu, rozszerzenie dodatkowo **otwiera ustawienia Narratora z propozycją jego instalacji** (Windows nie pozwala zainstalować go po cichu); po instalacji automatycznie przełącza się na głos Microsoftu.
+8. **Język dominujący.** Każda wypowiedź ma jeden język dominujący — ten, w którym użytkownik faktycznie mówi lub pisze (wtrącone terminy obcojęzyczne, np. angielskie nazwy techniczne w polskim zdaniu, go nie zmieniają):
+   - **na czat zawsze trafia wiadomość w języku dominującym** — korekta gramatyczna i wzbogacenie słownictwa nigdy nie tłumaczą treści;
+   - odpowiedzi i pytania modelu pomocniczego („whisper over”) są w języku dominującym;
+   - TTS czyta całość jednym głosem języka dominującego; tłumaczenie na angielski (głos Ryan) następuje **wyłącznie na potrzeby odczytu**, gdy brakuje głosu tego języka (§0.3.3).
 
 ---
 
@@ -110,8 +114,8 @@ Niezależnie od trybu **A**, **domyślnie włączony** jest automatyczny odczyt 
 1. ~~**Kiedy dokładnie wywołać `/compact`?**~~ **Rozstrzygnięte** — osobna wiadomość po zakończeniu odpowiedzi modelu (patrz §5).
 2. ~~**Polski głos naturalny offline.**~~ **Rozstrzygnięte** — Piper dopuszczony, gdy brak naturalnego głosu Microsoftu; brakujące głosy instalowane automatycznie (§0.3, §0.7).
    - 2a. ~~Pobieranie bez pytania czy po potwierdzeniu?~~ **Rozstrzygnięte** — pytanie z kodem języka, potem pobranie; Ryan domyślny (§0.3, §0.7).
-   - 2c. *Nowe:* przy braku głosu tłumaczenie na angielski dotyczy **tylko odczytu TTS**, a na czat trafia tekst w oryginalnym języku — zgoda? (Alternatywa: na czat też idzie wersja angielska.)
-   - 2b. *Nowe:* gdy w zdaniu mieszają się języki (polski z angielskimi terminami technicznymi), czytamy całość jednym głosem języka dominującego — zgoda?
+   - 2c. ~~Język wiadomości na czacie przy braku głosu?~~ **Rozstrzygnięte** — na czat zawsze trafia wiadomość w języku dominującym użytkownika; tłumaczenie na angielski służy wyłącznie do odczytu TTS (§0.8).
+   - 2b. ~~Mieszane języki w zdaniu?~~ **Rozstrzygnięte** — obowiązuje język dominujący wypowiedzi (§0.8).
 3. **„Auto TTS w trakcie pisania” (§4.2)** — czy czytać każde zdanie zaraz po jego zakończeniu, czy cały tekst dopiero po dyktowaniu/korekcie?
 4. **Pytanie modelu w polu wprowadzania** — gdy użytkownik zacznie odpowiadać, czy pytanie ma zostać **zastąpione** odpowiedzią, czy odpowiedź ma być **dopisana** pod pytaniem?
 5. **Ikona C a wklejanie** — czy po `Ctrl+C` obraz ma być **automatycznie wklejony** do pola czatu, czy tylko trafić do schowka (wklejasz sam przez `Ctrl+V`)?

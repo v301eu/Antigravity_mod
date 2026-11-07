@@ -1,0 +1,118 @@
+{
+  "name": "whisper_saver",
+  "displayName": "whisper_saver",
+  "description": "Pure-RAM OpenAI Whisper Turbo Voice Co-Pilot, 768px Annotated Canvas, Headphone-Only 48kHz 16-bit Stereo Natural TTS (Ryan/Marek), Stationary Array/USB Mic & Auto Git Commit/Push",
+  "version": "2.1.0",
+  "publisher": "v301eu",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "whisperSaver.canvas",
+        "title": "whisper_saver: Canvas Snip & Draw (Ctrl+C -> 768px RAM Clipboard)",
+        "icon": "$(device-camera)"
+      },
+      {
+        "command": "whisperSaver.voiceMic",
+        "title": "whisper_saver: Whisper Turbo Mic (whisper over / whisper enter)",
+        "icon": "$(mic)"
+      },
+      {
+        "command": "whisperSaver.ttsPlay",
+        "title": "whisper_saver: Play / Pause Natural TTS (Bluetooth 48kHz Stereo / AUX)",
+        "icon": "$(play)"
+      },
+      {
+        "command": "whisperSaver.toggleAuto",
+        "title": "whisper_saver: Toggle [A] Auto Mode (Auto TTS + Auto Mic Listening)",
+        "icon": "$(radio-tower)"
+      },
+      {
+        "command": "whisperSaver.enhanceAndSend",
+        "title": "whisper_saver: Enhance Grammar in RAM, Speak TTS & Send to Chat",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "whisperSaver.pasteAttachment",
+        "title": "whisper_saver: Paste PrintScreen/Canvas Attachment (Auto /compact)",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "whisperSaver.selectPlugin",
+        "title": "whisper_saver: Select Target Chat Plugin (Auto / Antigravity / Claude / Codex / Grok)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "whisperSaver.canvas",
+        "key": "alt+c",
+        "mac": "alt+c"
+      },
+      {
+        "command": "whisperSaver.voiceMic",
+        "key": "alt+m",
+        "mac": "alt+m"
+      },
+      {
+        "command": "whisperSaver.ttsPlay",
+        "key": "alt+p",
+        "mac": "alt+p"
+      },
+      {
+        "command": "whisperSaver.toggleAuto",
+        "key": "alt+a",
+        "mac": "alt+a"
+      },
+      {
+        "command": "whisperSaver.enhanceAndSend",
+        "key": "ctrl+alt+enter",
+        "mac": "cmd+alt+enter"
+      },
+      {
+        "command": "whisperSaver.pasteAttachment",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v"
+      }
+    ],
+    "configuration": {
+      "title": "whisper_saver",
+      "properties": {
+        "whisperSaver.targetPlugin": {
+          "type": "string",
+          "enum": ["auto", "antigravity", "claude", "codex", "grok"],
+          "default": "auto",
+          "description": "Aktywny plugin czatu AI (auto = automatyczne rozpoznawanie aktywnego czatu)."
+        },
+        "whisperSaver.autoReadResponses": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatyczne odczytywanie odpowiedzi głównego modelu na czacie przez słuchawki Bluetooth Stereo / AUX."
+        },
+        "whisperSaver.autoGitCommitPush": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatyczny git commit i git push po zapisaniu zmian w plikach projektu."
+        },
+        "whisperSaver.compactCommands": {
+          "type": "object",
+          "default": {
+            "antigravity": "/compact",
+            "claude": "/compact",
+            "codex": "/compact",
+            "grok": "/summarize"
+          },
+          "description": "Komendy kompaktowania kontekstu dodawane automatycznie po wysłaniu załącznika / PrintScreena dla każdego pluginu."
+        }
+      }
+    }
+  }
+}

@@ -9,7 +9,7 @@
 3. **Głosy TTS wyłącznie neuronowe, offline.** **Kategoryczny zakaz** używania starych głosów systemowych (*David Desktop*, *Zira Desktop*, *Paulina Desktop* i podobnych), również jako „awaryjnych”. Głos dobierany jest do języka rozpoznanego przez Whisper według kolejności:
    1. **naturalny głos Microsoftu** (3. generacja, offline, np. *Microsoft Ryan* dla angielskiego), jeśli jest zainstalowany dla danego języka;
    2. w przeciwnym razie **neuronowy głos Piper** dla danego języka (np. *MC Speech* / *Darkman* dla polskiego);
-   3. jeśli nie ma żadnego — **brakujący głos jest instalowany automatycznie** (patrz §0.7), a do tego czasu TTS milczy i wyświetla komunikat zamiast czytać złym głosem.
+   3. jeśli nie ma żadnego — rozszerzenie proponuje instalację brakującego głosu (patrz §0.7), a **do tego czasu tekst jest tłumaczony na angielski i czytany głosem *Microsoft Ryan*** (głos domyślny, zawsze obecny).
 4. **Model pomocniczy (tańszy) zależny od aktywnego pluginu** — służy do poprawy gramatyki, wzbogacenia słownictwa i prowadzenia dyskusji:
 
    | Plugin czatu | Model główny (drogi) | Model pomocniczy (tani) | Komenda kompaktowania |
@@ -22,8 +22,10 @@
 5. **Odporność na aktualizacje** — rozszerzenie nie może polegać na wewnętrznych, nieudokumentowanych elementach VS Code ani pluginów, które zmieniają się z każdą wersją; ścieżki do narzędzi CLI wyszukuje dynamicznie, a nazwy modeli i komend kompaktowania są konfigurowalne w ustawieniach.
 6. **Każdy tekst po korekcie gramatycznej jest odczytywany przez TTS**, zanim (lub w chwili gdy) trafi na czat.
 7. **Automatyczna instalacja głosów dla nowych użytkowników.** Rozszerzenie musi działać od razu u każdego, kto je zainstaluje, niezależnie od języka:
-   - przy pierwszym uruchomieniu instaluje głosy dla **języka systemu Windows** oraz dla **angielskiego**;
-   - gdy Whisper rozpozna język, dla którego nie ma głosu (np. francuski, niemiecki), rozszerzenie **samo pobiera głos Piper** dla tego języka (jednorazowo, ok. 60 MB, do folderu rozszerzenia) i od razu go używa;
+   - **Microsoft Ryan jest głosem domyślnym i obowiązkowym** — przy pierwszym uruchomieniu, jeśli go brakuje, rozszerzenie prowadzi do jego instalacji w pierwszej kolejności;
+   - gdy Whisper rozpozna język, dla którego nie ma głosu (np. francuski, niemiecki), rozszerzenie wyświetla pytanie z kodem języka, np. *„Brak głosu dla języka **fr-FR**. Pobrać?”* — po potwierdzeniu pobiera głos Piper (jednorazowo, ok. 60 MB, do folderu rozszerzenia) i od razu go używa;
+   - jeśli w tym momencie brakuje także Ryana, jedno potwierdzenie instaluje **oba głosy**;
+   - dopóki głos danego języka nie jest zainstalowany (lub użytkownik odmówił), obowiązuje zasada §0.3.3 — tłumaczenie na angielski i odczyt głosem Ryan;
    - jeśli dla tego języka istnieje naturalny głos Microsoftu, rozszerzenie dodatkowo **otwiera ustawienia Narratora z propozycją jego instalacji** (Windows nie pozwala zainstalować go po cichu); po instalacji automatycznie przełącza się na głos Microsoftu.
 
 ---
@@ -107,7 +109,8 @@ Niezależnie od trybu **A**, **domyślnie włączony** jest automatyczny odczyt 
 
 1. ~~**Kiedy dokładnie wywołać `/compact`?**~~ **Rozstrzygnięte** — osobna wiadomość po zakończeniu odpowiedzi modelu (patrz §5).
 2. ~~**Polski głos naturalny offline.**~~ **Rozstrzygnięte** — Piper dopuszczony, gdy brak naturalnego głosu Microsoftu; brakujące głosy instalowane automatycznie (§0.3, §0.7).
-   - 2a. *Nowe:* czy pobieranie głosu Piper dla nowego języka ma odbywać się **bez pytania**, czy po kliknięciu „Pobierz” w powiadomieniu?
+   - 2a. ~~Pobieranie bez pytania czy po potwierdzeniu?~~ **Rozstrzygnięte** — pytanie z kodem języka, potem pobranie; Ryan domyślny (§0.3, §0.7).
+   - 2c. *Nowe:* przy braku głosu tłumaczenie na angielski dotyczy **tylko odczytu TTS**, a na czat trafia tekst w oryginalnym języku — zgoda? (Alternatywa: na czat też idzie wersja angielska.)
    - 2b. *Nowe:* gdy w zdaniu mieszają się języki (polski z angielskimi terminami technicznymi), czytamy całość jednym głosem języka dominującego — zgoda?, no dobra to zostawimy piper, ważne aby nowy użytkownij instalujacy plugin whisper_saver miał automatycznie instalowane brakujące głosy, bo rayan cyz piper jest polski ale inni mogę potrzebowac innych głosów, francuski czy niemiecki itp.
 3. **„Auto TTS w trakcie pisania” (§4.2)** — czy czytać każde zdanie zaraz po jego zakończeniu, czy cały tekst dopiero po dyktowaniu/korekcie?
 4. **Pytanie modelu w polu wprowadzania** — gdy użytkownik zacznie odpowiadać, czy pytanie ma zostać **zastąpione** odpowiedzią, czy odpowiedź ma być **dopisana** pod pytaniem?

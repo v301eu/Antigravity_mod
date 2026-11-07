@@ -91,7 +91,7 @@ namespace PiperSapi
     [ComImport, Guid("06B64F9E-7FDA-11D2-B4F2-00C04F797396"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IEnumSpObjectTokens
     {
-        [PreserveSig] int Next(uint celt, out IntPtr pelt, IntPtr pceltFetched);
+        [PreserveSig] int Next(uint celt, IntPtr pelt, IntPtr pceltFetched);
         [PreserveSig] int Skip(uint celt);
         [PreserveSig] int Reset();
         [PreserveSig] int Clone(out IntPtr ppEnum);
@@ -102,7 +102,7 @@ namespace PiperSapi
     [ComImport, Guid("06B64F9F-7FDA-11D2-B4F2-00C04F797396"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface ISpObjectTokenEnumBuilder
     {
-        [PreserveSig] int Next(uint celt, out IntPtr pelt, IntPtr pceltFetched);
+        [PreserveSig] int Next(uint celt, IntPtr pelt, IntPtr pceltFetched);
         [PreserveSig] int Skip(uint celt);
         [PreserveSig] int Reset();
         [PreserveSig] int Clone(out IntPtr ppEnum);
@@ -375,9 +375,9 @@ namespace PiperSapi
             catch { }
         }
 
-        public int Next(uint celt, out IntPtr pelt, IntPtr pceltFetched)
+        public int Next(uint celt, IntPtr pelt, IntPtr pceltFetched)
         {
-            return _builder.Next(celt, out pelt, pceltFetched);
+            return _builder.Next(celt, pelt, pceltFetched);
         }
 
         public int Skip(uint celt)

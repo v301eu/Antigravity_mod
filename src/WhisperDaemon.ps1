@@ -1274,6 +1274,34 @@ Register-ObjectEvent -InputObject $clipTimer -EventName Elapsed -Action {
 } | Out-Null
 $clipTimer.Start()
 
+# Ensure ultra-fast whisper-server.exe (ggml-small-q5_1.bin) is running hidden in RAM
+try {
+    $binDir = Join-Path (Split-Path $PSScriptRoot -Parent) "bin"
+    $serverExe = Join-Path $binDir "whisper-server.exe"
+    $fastModel = Join-Path $binDir "ggml-small-q5_1.bin"
+    if (-not (Test-Path $fastModel)) { $fastModel = Join-Path $binDir "ggml-base.bin" }
+    if (Test-Path $serverExe) {
+        $needStart = $true
+        $existing = Get-CimInstance Win32_Process -Filter "Name = 'whisper-server.exe'" -ErrorAction SilentlyContinue
+        foreach ($proc in $existing) {
+            if ($proc.CommandLine -match "ggml-small-q5_1\.bin" -and $proc.CommandLine -match "-ac 384") {
+                $needStart = $false
+            } else {
+                Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+        }
+        if ($needStart -and (Test-Path $fastModel)) {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $serverExe
+            $psi.WorkingDirectory = $binDir
+            $psi.Arguments = "-m `"$fastModel`" --host 127.0.0.1 --port $WhisperPort -l pl -nt -sns -nf -bo 1 -bs 1 -mc 0 -ac 384 -t 8"
+            $psi.CreateNoWindow = $true
+            $psi.UseShellExecute = $false
+            [void][System.Diagnostics.Process]::Start($psi)
+        }
+    }
+} catch {}
+
 $initMicId = $script:recorder.FindStationaryArrayOrUsbMicId()
 Emit-Event @{
     event = "ready"

@@ -254,7 +254,7 @@ public class WhisperCanvasForm : Form {
         copyBtn.Click += (s, e) => FinalizeAndCopy768();
         _toolbar.Controls.Add(copyBtn);
 
-        Button cancelBtn = CreateFlatBtn("✕ Esc", Color.FromArgb(248, 113, 113));
+        Button cancelBtn = CreateFlatBtn("2715 Esc", Color.FromArgb(248, 113, 113));
         cancelBtn.Click += (s, e) => this.Close();
         _toolbar.Controls.Add(cancelBtn);
 

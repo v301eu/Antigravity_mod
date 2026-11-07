@@ -1007,7 +1007,7 @@ function Clean-TextForSpeech([string]$raw) {
     $c = [regex]::Replace($c, 'https?://\S+|file:///\S+', ' ')
     $c = [regex]::Replace($c, '(?m)^\s*/(compact|summarize)\b.*$', ' ')
     $c = [regex]::Replace($c, '(?m)^\s*[-*_]{2,}\s*$', ' ')
-    $c = [regex]::Replace($c, '[-—–]{2,}|(?<=\s)[-—–](?=\s)', ', ')
+    $c = [regex]::Replace($c, '[-20142013]{2,}|(?<=\s)[-20142013](?=\s)', ', ')
     $c = ($c -replace '[`#*~_>|]', ' ') -replace '\s+', ' '
     return $c.Trim()
 }

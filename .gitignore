@@ -1,5 +1,6 @@
-# Duze modele binarne OpenAI Whisper pobierane automatycznie przez install.ps1
+# Duze modele binarne OpenAI Whisper i Piper TTS pobierane automatycznie przez install.ps1
 bin/*.bin
 bin/*.zip
+bin/piper/
 node_modules/
 *.log

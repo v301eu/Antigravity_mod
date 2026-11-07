@@ -462,37 +462,44 @@ public class RamWaveRecorder : IDisposable {
     public bool StartManual() {
         if (!EnsureOpen()) return false;
         lock (_sync) {
-            _manualPcm = new MemoryStream(SAMPLE_RATE * 2 * 30);
             IsManualRecording = true;
             _vadInSpeech = false;
             _vadPcm = null;
+            _vadSpeechChunks = 0;
+            _vadSilenceChunks = 0;
+            _preRoll.Clear();
         }
         return true;
     }
 
     public byte[] StopManualAndGetWav() {
         byte[] pcm = null;
+        int speechChunks = 0;
         lock (_sync) {
             IsManualRecording = false;
-            if (_manualPcm != null) {
-                pcm = _manualPcm.ToArray();
-                _manualPcm.Dispose();
-                _manualPcm = null;
+            if (_vadInSpeech && _vadPcm != null) {
+                pcm = _vadPcm.ToArray();
+                speechChunks = _vadSpeechChunks;
+                _vadPcm.Dispose();
+                _vadPcm = null;
+                _vadInSpeech = false;
             }
         }
         if (!AutoVadEnabled) {
             CloseDevice();
         }
-        if (pcm == null || pcm.Length < 1600) return null;
+        if (pcm == null || speechChunks < 2 || pcm.Length < 3200) return null;
         return WrapPcmMono16kAsWav(pcm);
     }
 
     public void SetAutoVad(bool enabled) {
         lock (_sync) {
             AutoVadEnabled = enabled;
-            _vadInSpeech = false;
-            _vadPcm = null;
-            _preRoll.Clear();
+            if (!IsManualRecording) {
+                _vadInSpeech = false;
+                _vadPcm = null;
+                _preRoll.Clear();
+            }
         }
         if (enabled) {
             EnsureOpen();
@@ -521,33 +528,29 @@ public class RamWaveRecorder : IDisposable {
 
             byte[] finishedVadWav = null;
             bool triggerVadStart = false;
+            string currentMode = "live";
 
             lock (_sync) {
-                if (IsManualRecording && _manualPcm != null) {
-                    _manualPcm.Write(chunk, 0, chunk.Length);
-                    return;
-                }
-
-                if (!AutoVadEnabled) {
+                if (!IsManualRecording && !AutoVadEnabled) {
                     _vadInSpeech = false;
                     _vadPcm = null;
                     _preRoll.Clear();
                     return;
                 }
 
+                currentMode = IsManualRecording ? "live" : "auto";
                 double rms = ComputeRms(chunk);
-                // Built-in array mic with Windows noise suppression: silence is ~0, normal speech ~50-600 RMS.
                 bool isVoice = rms > VAD_RMS_THRESHOLD;
 
                 if (!_vadInSpeech) {
                     _preRoll.Enqueue(chunk);
-                    while (_preRoll.Count > 5) _preRoll.Dequeue();
+                    while (_preRoll.Count > 4) _preRoll.Dequeue();
 
                     if (isVoice) {
                         _vadSpeechChunks = 1;
                         _vadSilenceChunks = 0;
                         _vadInSpeech = true;
-                        _vadPcm = new MemoryStream(SAMPLE_RATE * 2 * 15);
+                        _vadPcm = new MemoryStream(SAMPLE_RATE * 2 * 10);
                         foreach (byte[] pre in _preRoll) {
                             _vadPcm.Write(pre, 0, pre.Length);
                         }
@@ -561,27 +564,114 @@ public class RamWaveRecorder : IDisposable {
                         _vadSilenceChunks = 0;
                     } else {
                         _vadSilenceChunks++;
-                        if (_vadSilenceChunks >= 13 || _vadPcm.Length > SAMPLE_RATE * 2 * 45) {
-                            byte[] rawVad = _vadPcm.ToArray();
-                            _vadPcm.Dispose();
-                            _vadPcm = null;
-                            _vadInSpeech = false;
-                            if (_vadSpeechChunks >= 4 && rawVad.Length >= 6400) {
-                                finishedVadWav = WrapPcmMono16kAsWav(rawVad);
-                            }
+                    }
+
+                    // Slice phrase on 600ms natural pause (6 chunks) or after 7.0s of continuous speech
+                    if (_vadSilenceChunks >= 6 || _vadPcm.Length >= SAMPLE_RATE * 2 * 7) {
+                        byte[] rawVad = _vadPcm.ToArray();
+                        int spChunks = _vadSpeechChunks;
+                        _vadPcm.Dispose();
+                        _vadPcm = null;
+                        _vadInSpeech = false;
+                        _vadSpeechChunks = 0;
+                        _vadSilenceChunks = 0;
+                        if (spChunks >= 3 && rawVad.Length >= 4800) {
+                            finishedVadWav = WrapPcmMono16kAsWav(rawVad);
                         }
                     }
                 }
             }
 
-            if (triggerVadStart && OnVadSpeechStart != null) {
-                ThreadPool.QueueUserWorkItem(_ => { try { OnVadSpeechStart(); } catch {} });
+            if (triggerVadStart && currentMode == "auto") {
+                ThreadPool.QueueUserWorkItem(_ => {
+                    WriteJsonEvent("{\"event\":\"vadSpeechStart\"}");
+                });
             }
-            if (finishedVadWav != null && OnVadUtteranceReady != null) {
+            if (finishedVadWav != null) {
                 byte[] payload = finishedVadWav;
-                ThreadPool.QueueUserWorkItem(_ => { try { OnVadUtteranceReady(payload); } catch {} });
+                string m = currentMode;
+                TranscribeWavAsync(payload, m);
             }
         } catch {}
+    }
+
+    public void TranscribeWavAsync(byte[] wavBytes, string mode) {
+        if (wavBytes == null || wavBytes.Length < 1600) {
+            if (mode == "manual") {
+                WriteJsonEvent("{\"event\":\"micIdle\",\"reason\":\"too_short\"}");
+            }
+            return;
+        }
+        ThreadPool.QueueUserWorkItem(_ => {
+            try {
+                if (mode == "auto") {
+                    WriteJsonEvent("{\"event\":\"vadProcessing\"}");
+                }
+                string rawJson = PostWavToWhisperRam(WhisperPort, wavBytes);
+                string text = ExtractWhisperText(rawJson);
+                if (!string.IsNullOrWhiteSpace(text)) {
+                    string lang = DetectIsoLang(text);
+                    WriteJsonEvent("{\"event\":\"transcription\",\"text\":\"" + EscapeJson(text) + "\",\"lang\":\"" + lang + "\",\"mode\":\"" + EscapeJson(mode) + "\"}");
+                } else if (mode == "manual") {
+                    WriteJsonEvent("{\"event\":\"micIdle\",\"reason\":\"empty\"}");
+                }
+            } catch (Exception ex) {
+                WriteJsonEvent("{\"event\":\"error\",\"source\":\"whisper\",\"message\":\"" + EscapeJson(ex.Message) + "\"}");
+            }
+        });
+    }
+
+    private static string ExtractWhisperText(string rawJson) {
+        if (string.IsNullOrWhiteSpace(rawJson)) return "";
+        int idx = rawJson.IndexOf("\"text\"", StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) return "";
+        int colon = rawJson.IndexOf(':', idx + 6);
+        if (colon < 0) return "";
+        int qStart = rawJson.IndexOf('"', colon + 1);
+        if (qStart < 0) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = qStart + 1; i < rawJson.Length; i++) {
+            char c = rawJson[i];
+            if (c == '\\' && i + 1 < rawJson.Length) {
+                char next = rawJson[++i];
+                switch (next) {
+                    case 'n': sb.Append(' '); break;
+                    case 'r': break;
+                    case 't': sb.Append(' '); break;
+                    case '"': sb.Append('"'); break;
+                    case '\\': sb.Append('\\'); break;
+                    case 'u':
+                        if (i + 4 < rawJson.Length) {
+                            string hex = rawJson.Substring(i + 1, 4);
+                            int code;
+                            if (int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out code)) {
+                                sb.Append((char)code);
+                                i += 4;
+                            }
+                        }
+                        break;
+                    default: sb.Append(next); break;
+                }
+            } else if (c == '"') {
+                break;
+            } else {
+                sb.Append(c);
+            }
+        }
+        string t = System.Text.RegularExpressions.Regex.Replace(sb.ToString(), @"\[[^\]]*\]|\([^\)]*\)", "").Trim();
+        // Filter common Whisper silence hallucinations
+        if (System.Text.RegularExpressions.Regex.IsMatch(t, @"^(Dzi\u0119kuj\u0119 za uwag\u0119|Napisy stworzone przez|Subskrybuj|Thank you for watching|Thanks for watching|You)[\.\!\s]*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) {
+            return "";
+        }
+        return t;
+    }
+
+    private static string DetectIsoLang(string sampleText) {
+        if (string.IsNullOrWhiteSpace(sampleText)) return "pl";
+        if (System.Text.RegularExpressions.Regex.IsMatch(sampleText, @"[\u0105\u0107\u0119\u0142\u0144\u00F3\u015B\u017A\u017C\u0104\u0106\u0118\u0141\u0143\u00D3\u015A\u0179\u017B]|\b(jest|nie|dla|czy|tak|jak|oraz|kod|teraz|to|w|na|z|i|do)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) {
+            return "pl";
+        }
+        return "pl";
     }
 
     private static double ComputeRms(byte[] pcm16) {

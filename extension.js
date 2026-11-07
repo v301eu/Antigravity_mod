@@ -533,14 +533,13 @@ async function activate(context) {
         "-m", activeWhisperModel,
         "--host", "127.0.0.1",
         "--port", String(WHISPER_PORT),
-        "-l", "pl",
+        "-l", "auto",
         "-nt",
         "-sns",
         "-nf",
         "-bo", "1",
         "-bs", "1",
         "-mc", "0",
-        "-ac", "384",
         "-t", String(cpuThreads)
       ],
       { cwd: binDir, windowsHide: true, stdio: "ignore" }

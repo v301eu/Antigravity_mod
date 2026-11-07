@@ -23,10 +23,18 @@ $tmp = [System.IO.Path]::GetTempPath()
 Get-ChildItem $tmp -Filter "loken_*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 Get-ChildItem $tmp -Filter "ryan_*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
-# 2. Pobierz szybki model do dyktowania w czasie rzeczywistym (ggml-small-q5_1.bin) oraz Whisper Large v3 Turbo, jesli nie ma ich w bin/
+# 2. Pobierz szybki model do dyktowania w czasie rzeczywistym (ggml-small-q5_1.bin), Whisper Large v3 Turbo oraz backend Vulkan GPU (AMD Radeon 780M) + OpenBLAS CPU
 $binSource = Join-Path $root "bin"
 if (-not (Test-Path $binSource)) {
     New-Item -ItemType Directory -Path $binSource -Force | Out-Null
+}
+$vkDll = Join-Path $binSource "ggml-vulkan.dll"
+if (-not (Test-Path $vkDll)) {
+    Write-Host "[Whisper GPU] Pobieranie akceleracji Vulkan dla karty graficznej (AMD Radeon 780M / iGPU)..." -ForegroundColor Yellow
+    $vkZip = Join-Path $tmp "whisper-vulkan-win-x64-v1.9.5.zip"
+    curl.exe -L --retry 3 -o $vkZip "https://github.com/alexbayd12/konspekt-whisper-vulkan/releases/download/vulkan-v1.9.5/whisper-vulkan-win-x64-v1.9.5.zip"
+    Expand-Archive -Path $vkZip -DestinationPath $binSource -Force
+    Remove-Item $vkZip -Force -ErrorAction SilentlyContinue
 }
 $fastModel = Join-Path $binSource "ggml-small-q5_1.bin"
 if (-not (Test-Path $fastModel) -or (Get-Item $fastModel).Length -lt 150000000) {

@@ -12,6 +12,7 @@ let whisperServerProc = null;
 let ownsWhisperServer = false;
 let daemonProc = null;
 let daemonRl = null;
+let isDeactivating = false;
 
 let isManualRecording = false;
 let isBusyProcessing = false;
@@ -539,14 +540,27 @@ async function activate(context) {
     whisperServerProc.on("error", () => { whisperServerProc = null; });
   }
 
-  if (fs.existsSync(daemonScript)) {
+  const startDaemon = () => {
+    if (isDeactivating || !fs.existsSync(daemonScript)) return;
     daemonProc = cp.spawn(
       "powershell.exe",
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", daemonScript, "-WhisperPort", String(WHISPER_PORT)],
       { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] }
     );
 
-    daemonRl = readline.createInterface({ input: daemonProc.stdout });
+    const thisProc = daemonProc;
+    thisProc.on("close", () => {
+      if (!isDeactivating && daemonProc === thisProc) {
+        daemonProc = null;
+        setTimeout(startDaemon, 600);
+      }
+    });
+
+    if (autoMode) {
+      sendDaemonCmd({ cmd: "setAutoVad", enabled: true });
+    }
+
+    daemonRl = readline.createInterface({ input: thisProc.stdout });
     daemonRl.on("line", async (line) => {
       let evt = null;
       try { evt = JSON.parse(line); } catch (e) { return; }
@@ -558,7 +572,7 @@ async function activate(context) {
           if (ttsState === "Playing") {
             ttsBtn.text = "$(debug-pause) ❚❚";
             ttsBtn.color = "#60a5fa";
-            ttsBtn.tooltip = `whisper_saver: Odtwarzanie 48kHz 16-bit Stereo (${evt.voice || "Natural TTS"} -> ${evt.device || "Słuchawki"})`;
+            ttsBtn.tooltip = `whisper_saver: Odtwarzanie 48kHz 16-bit Stereo (${evt.voice || "Local TTS"} -> ${evt.device || "Słuchawki"})`;
           } else if (ttsState === "Paused") {
             ttsBtn.text = "$(play) ▶";
             ttsBtn.color = "#fbbf24";
@@ -617,7 +631,8 @@ async function activate(context) {
         }
       }
     });
-  }
+  };
+  startDaemon();
 
   // =========================================================================
   // 3. Core Voice Co-Pilot Logic ("whisper over", "whisper enter" & attachments)
@@ -1069,6 +1084,7 @@ async function activate(context) {
 }
 
 function deactivate() {
+  isDeactivating = true;
   try {
     sendDaemonCmd({ cmd: "shutdown" });
   } catch (e) {}

@@ -1,12 +1,40 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Speech.Synthesis.TtsEngine;
 using System.Text;
 using Microsoft.Win32;
 
 namespace PiperSapi
 {
+    internal static class ModuleResolver
+    {
+        private static bool _initialized;
+        private static readonly object _lock = new object();
+
+        public static void EnsureInitialized()
+        {
+            if (_initialized) return;
+            lock (_lock)
+            {
+                if (_initialized) return;
+                _initialized = true;
+                AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
+            }
+        }
+
+        private static Assembly OnAssemblyResolve(object sender, ResolveEventArgs args)
+        {
+            if (args.Name != null && args.Name.StartsWith("PiperSapiEngine", StringComparison.OrdinalIgnoreCase))
+            {
+                return typeof(PiperTtsEngine).Assembly;
+            }
+            return null;
+        }
+    }
+
     [ComImport, Guid("14056581-E16C-11D2-BB90-00C04F8EE6C0"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface ISpDataKey
     {
@@ -165,13 +193,30 @@ namespace PiperSapi
     [ComVisible(true)]
     [Guid("D8E7F6A5-B4C3-4D2E-9F1A-0B9C8D7E6F50")]
     [ClassInterface(ClassInterfaceType.None)]
-    public class PiperTtsEngine : ISpObjectWithToken, ISpTTSEngine
+    public class PiperTtsEngine : TtsEngineSsml, ISpObjectWithToken, ISpTTSEngine
     {
         private static readonly Guid SPDFID_WaveFormatEx = new Guid("C31ADBAE-527F-4FF5-A230-F62BB61FF70C");
         private ISpObjectToken _token;
         private string _piperExe = @"c:\Users\vr_me\projects\whisper_saver\bin\piper\piper.exe";
         private string _modelPath = @"c:\Users\vr_me\projects\whisper_saver\bin\piper\pl_PL-darkman-medium.onnx";
         private int _sampleRate = 22050;
+
+        static PiperTtsEngine()
+        {
+            ModuleResolver.EnsureInitialized();
+        }
+
+        public PiperTtsEngine() : base("")
+        {
+        }
+
+        public PiperTtsEngine(string registryKey) : base(registryKey ?? "")
+        {
+            if (!string.IsNullOrEmpty(registryKey) && registryKey.IndexOf("6F52", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                _modelPath = @"c:\Users\vr_me\projects\whisper_saver\bin\piper\pl_PL-mc_speech-medium.onnx";
+            }
+        }
 
         public int SetObjectToken(ISpObjectToken pToken)
         {
@@ -197,10 +242,9 @@ namespace PiperSapi
             return 0;
         }
 
-        public int GetOutputFormat(ref Guid pTargetFmtId, IntPtr pTargetWaveFormatEx, out Guid pOutputFormatId, out IntPtr ppCoMemOutputWaveFormatEx)
+        private IntPtr AllocateWaveFormatEx()
         {
-            pOutputFormatId = SPDFID_WaveFormatEx;
-            ppCoMemOutputWaveFormatEx = Marshal.AllocCoTaskMem(18);
+            IntPtr ptr = Marshal.AllocCoTaskMem(18);
             short wFormatTag = 1; // WAVE_FORMAT_PCM
             short nChannels = 1;
             int nSamplesPerSec = _sampleRate;
@@ -209,13 +253,57 @@ namespace PiperSapi
             int nAvgBytesPerSec = nSamplesPerSec * nBlockAlign;
             short cbSize = 0;
 
-            Marshal.WriteInt16(ppCoMemOutputWaveFormatEx, 0, wFormatTag);
-            Marshal.WriteInt16(ppCoMemOutputWaveFormatEx, 2, nChannels);
-            Marshal.WriteInt32(ppCoMemOutputWaveFormatEx, 4, nSamplesPerSec);
-            Marshal.WriteInt32(ppCoMemOutputWaveFormatEx, 8, nAvgBytesPerSec);
-            Marshal.WriteInt16(ppCoMemOutputWaveFormatEx, 12, nBlockAlign);
-            Marshal.WriteInt16(ppCoMemOutputWaveFormatEx, 14, wBitsPerSample);
-            Marshal.WriteInt16(ppCoMemOutputWaveFormatEx, 16, cbSize);
+            Marshal.WriteInt16(ptr, 0, wFormatTag);
+            Marshal.WriteInt16(ptr, 2, nChannels);
+            Marshal.WriteInt32(ptr, 4, nSamplesPerSec);
+            Marshal.WriteInt32(ptr, 8, nAvgBytesPerSec);
+            Marshal.WriteInt16(ptr, 12, nBlockAlign);
+            Marshal.WriteInt16(ptr, 14, wBitsPerSample);
+            Marshal.WriteInt16(ptr, 16, cbSize);
+            return ptr;
+        }
+
+        // TtsEngineSsml overrides (used by .NET System.Speech)
+        public override IntPtr GetOutputFormat(SpeakOutputFormat speakOutputFormat, IntPtr targetWaveFormat)
+        {
+            return AllocateWaveFormatEx();
+        }
+
+        public override void AddLexicon(Uri uri, string mediaType, ITtsEngineSite site)
+        {
+        }
+
+        public override void RemoveLexicon(Uri uri, string mediaType, ITtsEngineSite site)
+        {
+        }
+
+        public override void Speak(TextFragment[] fragment, IntPtr waveHeader, ITtsEngineSite site)
+        {
+            if (site == null || fragment == null || fragment.Length == 0) return;
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < fragment.Length; i++)
+            {
+                TextFragment tf = fragment[i];
+                if (tf != null && !string.IsNullOrEmpty(tf.TextToSpeak))
+                {
+                    TtsEngineAction act = tf.State.Action;
+                    if (act == TtsEngineAction.Speak || act == TtsEngineAction.Pronounce || act == TtsEngineAction.SpellOut)
+                    {
+                        if (sb.Length > 0) sb.Append(' ');
+                        sb.Append(tf.TextToSpeak);
+                    }
+                }
+            }
+            SynthesizeToCallback(sb.ToString().Trim(),
+                () => (site.Actions & 2) != 0,
+                (ptr, len) => site.Write(ptr, len));
+        }
+
+        // ISpTTSEngine methods (used by WinRT / Speech_OneCore / native SAPI 5)
+        public int GetOutputFormat(ref Guid pTargetFmtId, IntPtr pTargetWaveFormatEx, out Guid pOutputFormatId, out IntPtr ppCoMemOutputWaveFormatEx)
+        {
+            pOutputFormatId = SPDFID_WaveFormatEx;
+            ppCoMemOutputWaveFormatEx = AllocateWaveFormatEx();
             return 0;
         }
 
@@ -228,8 +316,7 @@ namespace PiperSapi
             while (cur != IntPtr.Zero)
             {
                 SPVTEXTFRAG frag = (SPVTEXTFRAG)Marshal.PtrToStructure(cur, typeof(SPVTEXTFRAG));
-                // SPVA_Speak = 0, SPVA_SpellOut = 4
-                if ((frag.State.eAction == 0 || frag.State.eAction == 4) && frag.pTextStart != IntPtr.Zero && frag.ulTextLen > 0)
+                if ((frag.State.eAction == 0 || frag.State.eAction == 2 || frag.State.eAction == 4) && frag.pTextStart != IntPtr.Zero && frag.ulTextLen > 0)
                 {
                     string chunk = Marshal.PtrToStringUni(frag.pTextStart, frag.ulTextLen);
                     if (!string.IsNullOrEmpty(chunk))
@@ -241,9 +328,20 @@ namespace PiperSapi
                 cur = frag.pNext;
             }
 
-            string fullText = sb.ToString().Trim();
-            if (string.IsNullOrEmpty(fullText)) return 0;
-            if (!File.Exists(_piperExe) || !File.Exists(_modelPath)) return 0;
+            SynthesizeToCallback(sb.ToString().Trim(),
+                () => (pOutputSite.GetActions() & 2) != 0,
+                (ptr, len) =>
+                {
+                    uint written;
+                    pOutputSite.Write(ptr, (uint)len, out written);
+                });
+            return 0;
+        }
+
+        private void SynthesizeToCallback(string fullText, Func<bool> isAborted, Action<IntPtr, int> writeChunk)
+        {
+            if (string.IsNullOrEmpty(fullText)) return;
+            if (!File.Exists(_piperExe) || !File.Exists(_modelPath)) return;
 
             try
             {
@@ -272,15 +370,13 @@ namespace PiperSapi
                         int read;
                         while ((read = stdout.Read(buf, 0, buf.Length)) > 0)
                         {
-                            // Check SPVES_ABORT (2)
-                            if ((pOutputSite.GetActions() & 2) != 0)
+                            if (isAborted())
                             {
                                 try { proc.Kill(); } catch { }
                                 break;
                             }
                             Marshal.Copy(buf, 0, unmanagedBuf, read);
-                            uint written;
-                            pOutputSite.Write(unmanagedBuf, (uint)read, out written);
+                            writeChunk(unmanagedBuf, read);
                         }
                     }
                     finally
@@ -293,7 +389,6 @@ namespace PiperSapi
             catch
             {
             }
-            return 0;
         }
     }
 
@@ -308,10 +403,18 @@ namespace PiperSapi
         [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
         private static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
 
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+        private static extern int RegOpenKeyEx(UIntPtr hKey, string subKey, int ulOptions, int samDesired, out IntPtr hkResult);
+
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate int DllGetClassObjectDelegate(ref Guid rclsid, ref Guid riid, out IntPtr ppv);
 
         private ISpObjectTokenEnumBuilder _builder;
+
+        static PiperAndNaturalVoiceEnumerator()
+        {
+            ModuleResolver.EnsureInitialized();
+        }
 
         public PiperAndNaturalVoiceEnumerator()
         {
@@ -355,20 +458,20 @@ namespace PiperSapi
             catch { }
 
             // 2. Add Piper TTS tokens from HKCU\Software\PiperSapiEngine\Tokens
+            // Note: ISpRegDataKey.SetKey takes ownership of hKey and closes it on release.
             try
             {
-                using (RegistryKey rk = Registry.CurrentUser.OpenSubKey(@"Software\PiperSapiEngine", false))
+                IntPtr hKey;
+                // HKEY_CURRENT_USER = 0x80000001, KEY_READ = 0x20019
+                if (RegOpenKeyEx(new UIntPtr(0x80000001u), @"Software\PiperSapiEngine", 0, 0x20019, out hKey) == 0 && hKey != IntPtr.Zero)
                 {
-                    if (rk != null)
+                    Type tKey = Type.GetTypeFromCLSID(new Guid("D9F6EE60-58C9-458B-88E1-2F908FD7F87C"));
+                    ISpRegDataKey regKey = (ISpRegDataKey)Activator.CreateInstance(tKey);
+                    if (regKey.SetKey(hKey, true) == 0)
                     {
-                        Type tKey = Type.GetTypeFromCLSID(new Guid("D9F6EE60-58C9-458B-88E1-2F908FD7F87C"));
-                        ISpRegDataKey regKey = (ISpRegDataKey)Activator.CreateInstance(tKey);
-                        if (regKey.SetKey(rk.Handle.DangerousGetHandle(), true) == 0)
-                        {
-                            IntPtr pKeyUnk = Marshal.GetIUnknownForObject(regKey);
-                            _builder.AddTokensFromDataKey(pKeyUnk, "Tokens", @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices\TokenEnums\NaturalVoiceEnumerator");
-                            Marshal.Release(pKeyUnk);
-                        }
+                        IntPtr pKeyUnk = Marshal.GetIUnknownForObject(regKey);
+                        _builder.AddTokensFromDataKey(pKeyUnk, "Tokens", @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices\TokenEnums\NaturalVoiceEnumerator");
+                        Marshal.Release(pKeyUnk);
                     }
                 }
             }

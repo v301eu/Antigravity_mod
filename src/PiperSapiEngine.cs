@@ -409,6 +409,9 @@ namespace PiperSapi
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate int DllGetClassObjectDelegate(ref Guid rclsid, ref Guid riid, out IntPtr ppv);
 
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate int CreateInstanceDelegate(IntPtr thisPtr, IntPtr pUnkOuter, ref Guid riid, out IntPtr ppvObject);
+
         private ISpObjectTokenEnumBuilder _builder;
 
         static PiperAndNaturalVoiceEnumerator()
@@ -441,10 +444,12 @@ namespace PiperSapi
                             IntPtr pCF;
                             if (getClassObj(ref clsid, ref iidCF, out pCF) == 0 && pCF != IntPtr.Zero)
                             {
-                                IClassFactory cf = (IClassFactory)Marshal.GetObjectForIUnknown(pCF);
+                                IntPtr vtbl = Marshal.ReadIntPtr(pCF);
+                                IntPtr pCreateInst = Marshal.ReadIntPtr(vtbl, 3 * IntPtr.Size);
+                                CreateInstanceDelegate createInst = (CreateInstanceDelegate)Marshal.GetDelegateForFunctionPointer(pCreateInst, typeof(CreateInstanceDelegate));
                                 Guid iidEnum = new Guid("06B64F9E-7FDA-11D2-B4F2-00C04F797396");
                                 IntPtr pNatEnum;
-                                if (cf.CreateInstance(IntPtr.Zero, ref iidEnum, out pNatEnum) == 0 && pNatEnum != IntPtr.Zero)
+                                if (createInst(pCF, IntPtr.Zero, ref iidEnum, out pNatEnum) == 0 && pNatEnum != IntPtr.Zero)
                                 {
                                     _builder.AddTokensFromTokenEnum(pNatEnum);
                                     Marshal.Release(pNatEnum);

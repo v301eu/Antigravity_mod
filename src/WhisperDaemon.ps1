@@ -53,11 +53,13 @@ Add-Type -ReferencedAssemblies @(
 ) -TypeDefinition @"
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -609,6 +611,74 @@ public class RamWaveRecorder : IDisposable {
             bw.Write(pcm);
             return ms.ToArray();
         }
+    }
+
+    // 100% Local Offline Piper Neural TTS in pure RAM -> upsampled to 48000Hz 16-bit 2ch Stereo WAV
+    public static byte[] SynthesizePiperStereo48kWav(string piperExe, string modelPath, string text, int srcRate = 22050) {
+        if (string.IsNullOrWhiteSpace(text) || !File.Exists(piperExe) || !File.Exists(modelPath)) return null;
+
+        byte[] rawMono = null;
+        ProcessStartInfo psi = new ProcessStartInfo {
+            FileName = piperExe,
+            Arguments = "--model \"" + modelPath + "\" --output_raw",
+            WorkingDirectory = Path.GetDirectoryName(piperExe),
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+
+        using (Process proc = Process.Start(psi)) {
+            byte[] utf8Text = Encoding.UTF8.GetBytes(text.Replace("\r", " ").Replace("\n", " ") + "\n");
+            proc.StandardInput.BaseStream.Write(utf8Text, 0, utf8Text.Length);
+            proc.StandardInput.BaseStream.Flush();
+            proc.StandardInput.Close();
+
+            using (MemoryStream msOut = new MemoryStream(srcRate * 2 * 15)) {
+                proc.StandardOutput.BaseStream.CopyTo(msOut);
+                rawMono = msOut.ToArray();
+            }
+            proc.WaitForExit(15000);
+        }
+
+        if (rawMono == null || rawMono.Length < 4) return null;
+
+        int inSamples = rawMono.Length / 2;
+        const int dstRate = 48000;
+        int outSamples = (int)((long)inSamples * dstRate / srcRate);
+        if (outSamples < 1) return null;
+
+        byte[] stereo48k = new byte[outSamples * 4]; // 2 channels * 2 bytes per sample
+        double ratio = (double)(inSamples - 1) / Math.Max(1, outSamples - 1);
+
+        for (int i = 0; i < outSamples; i++) {
+            double srcPos = i * ratio;
+            int idx0 = (int)srcPos;
+            int idx1 = idx0 + 1;
+            if (idx1 >= inSamples) idx1 = inSamples - 1;
+            double frac = srcPos - idx0;
+
+            short s0 = (short)(rawMono[idx0 * 2] | (rawMono[idx0 * 2 + 1] << 8));
+            short s1 = (short)(rawMono[idx1 * 2] | (rawMono[idx1 * 2 + 1] << 8));
+            int interp = (int)Math.Round(s0 + (s1 - s0) * frac);
+            if (interp > 32767) interp = 32767;
+            else if (interp < -32768) interp = -32768;
+            short outSample = (short)interp;
+
+            byte lo = (byte)(outSample & 0xFF);
+            byte hi = (byte)((outSample >> 8) & 0xFF);
+
+            int byteOffset = i * 4;
+            // Left channel
+            stereo48k[byteOffset] = lo;
+            stereo48k[byteOffset + 1] = hi;
+            // Right channel
+            stereo48k[byteOffset + 2] = lo;
+            stereo48k[byteOffset + 3] = hi;
+        }
+
+        return WrapPcmStereo48kAsWav(stereo48k);
     }
 
     public static string PostWavToWhisperRam(int port, byte[] wavBytes) {

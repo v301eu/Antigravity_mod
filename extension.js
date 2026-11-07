@@ -188,7 +188,7 @@ function getCompactCommandForPlugin(plugin) {
 
 async function focusActivePluginChatInput(plugin) {
   const focusMap = {
-    antigravity: ["antigravity.panel.focus"],
+    antigravity: ["antigravity.toggleChatFocus", "antigravity.panel.focus"],
     claude: ["claude-vscode.focus", "claude-vscode.sidebar.open"],
     codex: ["chatgpt.openSidebar"],
     grok: ["grok.focus", "workbench.panel.chat.view.copilot.focus"]
@@ -200,6 +200,7 @@ async function focusActivePluginChatInput(plugin) {
       break;
     } catch (e) {}
   }
+  await new Promise(r => setTimeout(r, 90));
 }
 
 function readTailUtf8InRam(filePath, maxBytes = 65536) {
@@ -470,9 +471,12 @@ async function activate(context) {
   const daemonScript = path.join(scriptsDir, "WhisperDaemon.ps1");
   const whisperServerExe = path.join(binDir, "whisper-server.exe");
 
+  const fastModel = path.join(binDir, "ggml-small-q5_1.bin");
+  const baseModel = path.join(binDir, "ggml-base.bin");
   const turboModel = path.join(binDir, "ggml-large-v3-turbo-q5_0.bin");
-  const fallbackModel = path.join(binDir, "ggml-base.bin");
-  const activeWhisperModel = fs.existsSync(turboModel) ? turboModel : fallbackModel;
+  const activeWhisperModel = fs.existsSync(fastModel)
+    ? fastModel
+    : (fs.existsSync(baseModel) ? baseModel : turboModel);
 
   // =========================================================================
   // 1. Status Bar Icons (Bottom Bar of VS Code)
@@ -522,16 +526,21 @@ async function activate(context) {
   // =========================================================================
   const alreadyRunning = await checkPortOpen(WHISPER_PORT);
   if (!alreadyRunning && fs.existsSync(whisperServerExe) && fs.existsSync(activeWhisperModel)) {
-    const cpuThreads = Math.max(4, Math.min(12, os.cpus().length - 2));
+    const cpuThreads = Math.max(4, Math.min(8, os.cpus().length - 2));
     whisperServerProc = cp.spawn(
       whisperServerExe,
       [
         "-m", activeWhisperModel,
         "--host", "127.0.0.1",
         "--port", String(WHISPER_PORT),
-        "-l", "auto",
+        "-l", "pl",
         "-nt",
         "-sns",
+        "-nf",
+        "-bo", "1",
+        "-bs", "1",
+        "-mc", "0",
+        "-ac", "384",
         "-t", String(cpuThreads)
       ],
       { cwd: binDir, windowsHide: true, stdio: "ignore" }
@@ -626,7 +635,7 @@ async function activate(context) {
         }
 
         case "transcription": {
-          await handleWhisperTranscription(evt.text || "", evt.lang || "pl");
+          await handleWhisperTranscription(evt.text || "", evt.lang || "pl", evt.mode || "manual");
           break;
         }
       }
@@ -774,11 +783,18 @@ async function activate(context) {
     }
   }
 
-  async function handleWhisperTranscription(rawText, detectedLang) {
-    refreshMicUi("idle");
+  async function handleWhisperTranscription(rawText, detectedLang, mode = "manual") {
+    if (isManualRecording && mode === "live") {
+      refreshMicUi("recording");
+    } else {
+      isManualRecording = false;
+      refreshMicUi("idle");
+    }
     const trimmed = (rawText || "").trim();
     if (!trimmed) {
-      vscode.window.setStatusBarMessage("$(info) whisper_saver: Nie wykryto mowy.", 3000);
+      if (mode !== "live") {
+        vscode.window.setStatusBarMessage("$(info) whisper_saver: Nie wykryto mowy.", 3000);
+      }
       return;
     }
 
@@ -799,12 +815,20 @@ async function activate(context) {
     const enterRegex = /[,\s]*(?:whisper|łisper|wisper)[,\s]+(?:enter|wyślij)[\s.!?]*$/i;
 
     if (enterRegex.test(workingText)) {
+      if (isManualRecording) {
+        isManualRecording = false;
+        sendDaemonCmd({ cmd: "stopMic" });
+      }
       const cleanBody = workingText.replace(enterRegex, "").trim();
       await finalizeGrammarSpeakAndSend(cleanBody, ramSession.detectedLang, plugin, true);
       return;
     }
 
     if (overRegex.test(workingText)) {
+      if (isManualRecording) {
+        isManualRecording = false;
+        sendDaemonCmd({ cmd: "stopMic" });
+      }
       const cleanBody = workingText.replace(overRegex, "").trim();
       await handleWhisperOverDiscussion(cleanBody, ramSession.detectedLang, plugin);
       return;
@@ -819,7 +843,7 @@ async function activate(context) {
         replace: false,
         submit: false
       });
-      if (autoMode) {
+      if (autoMode && mode !== "live") {
         speakNaturalTts(workingText, ramSession.detectedLang, "auto_dictation");
       }
       vscode.window.setStatusBarMessage(`$(check) whisper_saver [${ramSession.detectedLang.toUpperCase()}]: "${workingText.slice(0, 60)}"`, 5000);
@@ -954,16 +978,17 @@ async function activate(context) {
     );
   });
 
-  const micCmd = vscode.commands.registerCommand("whisperSaver.voiceMic", () => {
+  const micCmd = vscode.commands.registerCommand("whisperSaver.voiceMic", async () => {
     if (!isManualRecording) {
       isManualRecording = true;
       refreshMicUi("recording");
       sendDaemonCmd({ cmd: "startMic" });
-      vscode.window.setStatusBarMessage("$(record) whisper_saver: Nagrywam w RAM (Array/USB)... Zakończ 'whisper over' lub 'whisper enter' i wciśnij Alt+M.", 30000);
+      vscode.window.setStatusBarMessage("$(record) whisper_saver: Dyktowanie na żywo w RAM (mów — tekst pojawia się od razu po każdej frazie)...", 30000);
+      await focusActivePluginChatInput(detectActivePlugin());
     } else {
       isManualRecording = false;
       refreshMicUi("processing");
-      vscode.window.setStatusBarMessage("$(sync~spin) whisper_saver: Rozpoznawanie mowy i języka przez OpenAI Whisper Turbo...", 15000);
+      vscode.window.setStatusBarMessage("$(sync~spin) whisper_saver: Kończenie dyktowania w RAM...", 5000);
       sendDaemonCmd({ cmd: "stopMic" });
     }
   });

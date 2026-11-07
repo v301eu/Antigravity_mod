@@ -20,7 +20,7 @@
    | Grok (z Cursora, jeśli dostępny w VS Code) | wybrany przez użytkownika | *(do ustalenia)* | *(do ustalenia)* |
 
 5. **Odporność na aktualizacje** — rozszerzenie nie może polegać na wewnętrznych, nieudokumentowanych elementach VS Code ani pluginów, które zmieniają się z każdą wersją; ścieżki do narzędzi CLI wyszukuje dynamicznie, a nazwy modeli i komend kompaktowania są konfigurowalne w ustawieniach.
-6. **Każdy tekst po korekcie gramatycznej jest odczytywany przez TTS**, zanim (lub w chwili gdy) trafi na czat.
+6. **TTS czyta wyłącznie tekst po korekcie** — poprawiony gramatycznie i wzbogacony słownictwem, bez zmiany znaczenia. Surowy tekst z dyktowania nigdy nie jest odczytywany. Kolejność „wysłanie na czat ↔ odczyt” zależy od komendy (§2): przy „whisper enter” najpierw wysyłka, potem odczyt; przy „whisper over” wysyłka następuje dopiero, gdy wszystko jest jasne.
 7. **Automatyczna instalacja głosów dla nowych użytkowników.** Rozszerzenie musi działać od razu u każdego, kto je zainstaluje, niezależnie od języka:
    - **Microsoft Ryan jest głosem domyślnym i obowiązkowym** — przy pierwszym uruchomieniu, jeśli go brakuje, rozszerzenie prowadzi do jego instalacji w pierwszej kolejności;
    - gdy Whisper rozpozna język, dla którego nie ma głosu (np. francuski, niemiecki), rozszerzenie wyświetla pytanie z kodem języka, np. *„Brak głosu dla języka **fr-FR**. Pobrać?”* — po potwierdzeniu pobiera głos Piper (jednorazowo, ok. 60 MB, do folderu rozszerzenia) i od razu go używa;
@@ -58,20 +58,24 @@
 **Dyktowanie:**
 1. Kliknięcie ikony (lub `Alt+M`) włącza nasłuch; ponowne kliknięcie go kończy.
 2. Whisper Turbo **automatycznie rozpoznaje język** każdej wypowiedzi; od tego języka zależą odpowiedzi modelu pomocniczego i wybór głosu TTS.
-3. Rozpoznany tekst trafia do **pola wprowadzania tekstu czatu** aktywnego pluginu (bez wysyłania), dopóki użytkownik nie wypowie jednej z komend.
+3. Rozpoznany tekst trafia do **pola wprowadzania tekstu czatu** aktywnego pluginu (bez wysyłania i bez odczytu TTS), dopóki użytkownik nie wypowie jednej z komend.
+
+**Komenda głosowa „whisper enter” — wysyłka natychmiastowa:**
+1. Model pomocniczy **poprawia gramatykę i wzbogaca słownictwo** — bez dyskusji, bez pytań i bez zmiany znaczenia wypowiedzi.
+2. Poprawiony tekst **od razu trafia na czat i zostaje wysłany**.
+3. **Dopiero potem** TTS go odczytuje — model główny pracuje nad odpowiedzią równolegle z odczytem, bez czekania.
 
 **Komenda głosowa „whisper over” — tryb dyskusji:**
 1. Wypowiedź zakończona frazą **„whisper over”** przekazuje dotychczasowy szkic do modelu pomocniczego wraz z:
    - pełną bieżącą wymianą głosową (przechowywaną w RAM),
-   - kontekstem całego bieżącego tematu odczytanym z historii czatu.
-2. Model pomocniczy ocenia, czy użytkownik **nie pominął czegoś istotnego** lub nie pozostawił niejasności. Jeśli tak — formułuje **pytanie doprecyzowujące**, które:
+   - kontekstem całego dotychczasowego czatu w bieżącym temacie.
+2. Model pomocniczy **poprawia gramatykę i wzbogaca słownictwo** (bez zmiany znaczenia), a następnie ocenia wypowiedź na tle całego kontekstu czatu: czy jest coś **niejasnego, niezrozumiałego, nielogicznego** lub czy użytkownik **nie pominął czegoś istotnego**.
+3. **Jeśli coś wymaga doprecyzowania** — wiadomość **nie trafia na czat**. Model formułuje **pytanie doprecyzowujące**, które:
    - pojawia się w polu wprowadzania tekstu,
-   - jest **odczytywane głosem TTS** (Ryan po angielsku, naturalny głos polski po polsku itd.).
-3. Użytkownik odpowiada głosem i ponownie kończy frazą „whisper over”. Model może dopytywać dalej, nieprzerwanie utrzymując ciągłość rozmowy.
-4. Gdy polecenie jest kompletne, model pomocniczy **poprawia gramatykę, wzbogaca słownictwo**, zachowując pierwotny sens, odczytuje wynik przez TTS i **wysyła go na czat** do modelu głównego.
+   - jest **odczytywane głosem TTS** w języku dominującym.
 
-**Komenda głosowa „whisper enter” — wysyłka natychmiastowa:**
-- Wymusza korektę gramatyczną i wzbogacenie słownictwa **bez dyskusji i bez zmiany znaczenia wypowiedzi**, odczyt TTS, a następnie **bezpośrednie wysłanie** na czat.
+   Użytkownik odpowiada głosem i ponownie kończy frazą „whisper over”. Model może dopytywać dalej, nieprzerwanie utrzymując ciągłość rozmowy i kontekst czatu.
+4. **Jeśli wszystko jest jasne** — poprawiona, kompletna wiadomość (łącząca wszystkie ustalenia z dyskusji) **trafia na czat i zostaje wysłana**, a następnie TTS ją **odczytuje**, aby użytkownik usłyszał, co zostało poprawione.
 
 **Komenda głosowa dołączenia zrzutu** (np. „whisper screen”, „wklej zrzut”):
 - Wkleja obraz ze schowka jako załącznik do bieżącej wiadomości (patrz §5).
@@ -95,7 +99,7 @@
 
 Włączenie trybu **A** (kliknięcie lub `Alt+A`; stan ON sygnalizowany kolorem ikony) aktywuje jednocześnie:
 1. **Automatyczne nasłuchiwanie mikrofonu** — detekcja mowy (VAD) sama rozpoczyna i kończy nagrywanie każdej wypowiedzi; nie trzeba klikać ikony mikrofonu. Komendy „whisper over” / „whisper enter” działają identycznie jak w §2.
-2. **Automatyczny odczyt TTS** treści wprowadzanej w polu tekstowym (dyktowanej lub poprawionej przez model pomocniczy).
+2. **Automatyczny odczyt TTS** — czytane są wyłącznie wiadomości **poprawione** przez model pomocniczy oraz jego pytania doprecyzowujące, w kolejności opisanej w §2. Surowy tekst z dyktowania nie jest czytany.
 
 Niezależnie od trybu **A**, **domyślnie włączony** jest automatyczny odczyt każdej nowej odpowiedzi czatu głównego (drogiego modelu). Można go wyłączyć w ustawieniach.
 
@@ -114,9 +118,9 @@ Niezależnie od trybu **A**, **domyślnie włączony** jest automatyczny odczyt 
 1. ~~**Kiedy dokładnie wywołać `/compact`?**~~ **Rozstrzygnięte** — osobna wiadomość po zakończeniu odpowiedzi modelu (patrz §5).
 2. ~~**Polski głos naturalny offline.**~~ **Rozstrzygnięte** — Piper dopuszczony, gdy brak naturalnego głosu Microsoftu; brakujące głosy instalowane automatycznie (§0.3, §0.7).
    - 2a. ~~Pobieranie bez pytania czy po potwierdzeniu?~~ **Rozstrzygnięte** — pytanie z kodem języka, potem pobranie; Ryan domyślny (§0.3, §0.7).
-   - 2c. ~~Język wiadomości na czacie przy braku głosu?~~ **Rozstrzygnięte** — na czat zawsze trafia wiadomość w języku dominującym użytkownika; tłumaczenie na angielski służy wyłącznie do odczytu TTS (§0.8).
    - 2b. ~~Mieszane języki w zdaniu?~~ **Rozstrzygnięte** — obowiązuje język dominujący wypowiedzi (§0.8).
-3. **„Auto TTS w trakcie pisania” (§4.2)** — czy czytać każde zdanie zaraz po jego zakończeniu, czy cały tekst dopiero po dyktowaniu/korekcie?
+   - 2c. ~~Język wiadomości na czacie przy braku głosu?~~ **Rozstrzygnięte** — na czat zawsze trafia wiadomość w języku dominującym użytkownika; tłumaczenie na angielski służy wyłącznie do odczytu TTS (§0.8).
+3. ~~**„Auto TTS w trakcie pisania”**~~ **Rozstrzygnięte** — czytany jest tylko tekst po korekcie; „whisper enter”: wysyłka → odczyt; „whisper over”: dopytanie albo wysyłka → odczyt (§0.6, §2, §4.2).
 4. **Pytanie modelu w polu wprowadzania** — gdy użytkownik zacznie odpowiadać, czy pytanie ma zostać **zastąpione** odpowiedzią, czy odpowiedź ma być **dopisana** pod pytaniem?
 5. **Ikona C a wklejanie** — czy po `Ctrl+C` obraz ma być **automatycznie wklejony** do pola czatu, czy tylko trafić do schowka (wklejasz sam przez `Ctrl+V`)?
 6. **Komenda anulowania** — czy dodać np. „whisper cancel” / „whisper stop”, która porzuca bieżącą dyskusję i czyści szkic?

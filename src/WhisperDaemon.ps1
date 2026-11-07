@@ -11,15 +11,27 @@ $ErrorActionPreference = "Continue"
 [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 
-# 1. Ensure Microsoft 3rd-Gen Natural Voices (Narrator + Edge Neural) are enabled in NaturalVoiceSAPIAdapter
+# 1. Ensure ONLY Local Offline Voices are enabled in NaturalVoiceSAPIAdapter (Online/Edge Voices STRICTLY BLOCKED)
 try {
     $enumKey = "HKCU:\Software\NaturalVoiceSAPIAdapter\Enumerator"
     if (Test-Path $enumKey) {
         Set-ItemProperty -Path $enumKey -Name "NoNarratorVoices" -Value 0 -Type DWord -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path $enumKey -Name "NoEdgeVoices" -Value 0 -Type DWord -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path $enumKey -Name "EdgeVoiceAllLanguages" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $enumKey -Name "NoEdgeVoices" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $enumKey -Name "NoAzureVoices" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $enumKey -Name "EdgeVoiceAllLanguages" -Value 0 -Type DWord -ErrorAction SilentlyContinue
     }
 } catch {}
+
+$script:binRoot = Join-Path (Split-Path -Parent $PSScriptRoot) "bin"
+$script:piperDir = Join-Path $script:binRoot "piper"
+if (-not (Test-Path (Join-Path $script:piperDir "piper.exe"))) {
+    $altPiper = Join-Path $env:USERPROFILE "projects\whisper_saver\bin\piper"
+    if (Test-Path (Join-Path $altPiper "piper.exe")) {
+        $script:piperDir = $altPiper
+    }
+}
+$script:piperExe = Join-Path $script:piperDir "piper.exe"
+$script:piperPlModel = Join-Path $script:piperDir "pl_PL-mc_speech-medium.onnx"
 
 Add-Type -AssemblyName System.Speech
 Add-Type -AssemblyName System.Windows.Forms

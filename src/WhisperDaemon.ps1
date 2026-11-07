@@ -824,8 +824,6 @@ public class RamWaveRecorder : IDisposable {
         return WrapPcmStereo48kAsWav(stereo48k);
     }
 
-    private static readonly HttpClient _httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(15) };
-
     public static string PostWavToWhisperRam(int port, byte[] wavBytes) {
         using (MultipartFormDataContent mp = new MultipartFormDataContent()) {
             ByteArrayContent bc = new ByteArrayContent(wavBytes);

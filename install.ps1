@@ -47,6 +47,9 @@ if (-not (Test-Path $piperExe)) {
     Expand-Archive -Path $piperZip -DestinationPath $binSource -Force
     Remove-Item $piperZip -Force -ErrorAction SilentlyContinue
 }
+Copy-Item (Join-Path $binSource "msvcp*.dll") "$piperDir\" -Force -ErrorAction SilentlyContinue
+Copy-Item (Join-Path $binSource "vcruntime*.dll") "$piperDir\" -Force -ErrorAction SilentlyContinue
+Copy-Item (Join-Path $binSource "vcomp*.dll") "$piperDir\" -Force -ErrorAction SilentlyContinue
 $mcOnnx = Join-Path $piperDir "pl_PL-mc_speech-medium.onnx"
 $mcJson = Join-Path $piperDir "pl_PL-mc_speech-medium.onnx.json"
 if (-not (Test-Path $mcOnnx) -or (Get-Item $mcOnnx).Length -lt 50000000) {

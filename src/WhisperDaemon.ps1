@@ -824,18 +824,18 @@ public class RamWaveRecorder : IDisposable {
         return WrapPcmStereo48kAsWav(stereo48k);
     }
 
+    private static readonly HttpClient _httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(15) };
+
     public static string PostWavToWhisperRam(int port, byte[] wavBytes) {
-        using (HttpClient hc = new HttpClient()) {
-            hc.Timeout = TimeSpan.FromSeconds(45);
-            using (MultipartFormDataContent mp = new MultipartFormDataContent()) {
-                ByteArrayContent bc = new ByteArrayContent(wavBytes);
-                bc.Headers.ContentType = MediaTypeHeaderValue.Parse("audio/wav");
-                mp.Add(bc, "file", "speech.wav");
-                mp.Add(new StringContent("verbose_json"), "response_format");
-                mp.Add(new StringContent("0.0"), "temperature");
-                HttpResponseMessage resp = hc.PostAsync("http://127.0.0.1:" + port + "/inference", mp).GetAwaiter().GetResult();
-                return resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-            }
+        using (MultipartFormDataContent mp = new MultipartFormDataContent()) {
+            ByteArrayContent bc = new ByteArrayContent(wavBytes);
+            bc.Headers.ContentType = MediaTypeHeaderValue.Parse("audio/wav");
+            mp.Add(bc, "file", "speech.wav");
+            mp.Add(new StringContent("json"), "response_format");
+            mp.Add(new StringContent("0.0"), "temperature");
+            mp.Add(new StringContent("0.0"), "temperature_inc");
+            HttpResponseMessage resp = _httpClient.PostAsync("http://127.0.0.1:" + port + "/inference", mp).GetAwaiter().GetResult();
+            return resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         }
     }
 
@@ -935,46 +935,8 @@ $script:ttsSync = [hashtable]::Synchronized(@{
 })
 
 $script:recorder = New-Object RamWaveRecorder
-
-function Invoke-RamTranscription([byte[]]$wavBytes, [string]$mode) {
-    if (-not $wavBytes -or $wavBytes.Length -lt 1600) {
-        Emit-Event @{ event = "micIdle"; reason = "too_short" }
-        return
-    }
-    try {
-        $rawJson = [RamWaveRecorder]::PostWavToWhisperRam($WhisperPort, $wavBytes)
-        $parsed = $rawJson | ConvertFrom-Json
-        $text = ""
-        if ($parsed.text) { $text = [string]$parsed.text }
-        $text = [regex]::Replace($text, '\[[^\]]*\]|\([^\)]*\)', '').Trim()
-        $wLang = if ($parsed.detected_language) { [string]$parsed.detected_language } elseif ($parsed.language) { [string]$parsed.language } else { "" }
-        $isoLang = Resolve-IsoLang $wLang $text
-
-        Emit-Event @{
-            event = "transcription"
-            text = $text
-            lang = $isoLang
-            rawLang = $wLang
-            mode = $mode
-        }
-    } catch {
-        Emit-Event @{
-            event = "error"
-            source = "whisper"
-            message = $_.Exception.Message
-        }
-    }
-}
-
-$script:recorder.OnVadSpeechStart = {
-    Emit-Event @{ event = "vadSpeechStart" }
-}
-
-$script:recorder.OnVadUtteranceReady = {
-    param([byte[]]$wavBytes)
-    Emit-Event @{ event = "vadProcessing" }
-    Invoke-RamTranscription $wavBytes "auto"
-}
+$script:recorder.WhisperPort = $WhisperPort
+$script:recorder.ConsoleOutLock = $script:outLock
 
 function Start-RamTtsPlayback([string]$rawText, [string]$forceLang, [string]$requestId) {
     $clean = Clean-TextForSpeech $rawText
@@ -1338,7 +1300,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
                 $wav = $script:recorder.StopManualAndGetWav()
                 Emit-Event @{ event = "micState"; recording = $false }
                 if ($wav) {
-                    Invoke-RamTranscription $wav "manual"
+                    $script:recorder.TranscribeWavAsync($wav, "manual")
                 } else {
                     Emit-Event @{ event = "micIdle"; reason = "empty" }
                 }

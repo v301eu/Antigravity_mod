@@ -320,7 +320,9 @@ public class RamWaveRecorder : IDisposable {
     private const int SAMPLE_RATE = 16000;
     private const int BUFFER_BYTES = 3200; // 100ms of 16kHz 16-bit Mono PCM for Whisper
     private const int NUM_BUFFERS = 8;
-    private const double VAD_RMS_THRESHOLD = 45.0;
+    private const double VAD_RMS_THRESHOLD = 18.0;
+
+    private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
 
     private IntPtr _hWaveIn = IntPtr.Zero;
     private WaveInProc _callback;
@@ -330,12 +332,10 @@ public class RamWaveRecorder : IDisposable {
     private readonly object _sync = new object();
 
     public string ActiveMicName { get; private set; }
+    public int WhisperPort { get; set; }
+    public object ConsoleOutLock { get; set; }
 
-    // Manual recording stream in RAM
-    private MemoryStream _manualPcm = null;
     public bool IsManualRecording { get; private set; }
-
-    // Auto listening in RAM (never suppressed by TTS; always full-duplex on stationary mic)
     public bool AutoVadEnabled { get; set; }
     private Queue<byte[]> _preRoll = new Queue<byte[]>();
     private MemoryStream _vadPcm = null;
@@ -343,12 +343,41 @@ public class RamWaveRecorder : IDisposable {
     private int _vadSilenceChunks = 0;
     private int _vadSpeechChunks = 0;
 
-    public Action OnVadSpeechStart;
-    public Action<byte[]> OnVadUtteranceReady;
-
     public RamWaveRecorder() {
         _callback = new WaveInProc(OnWaveData);
         ActiveMicName = "";
+        WhisperPort = 18971;
+        ConsoleOutLock = new object();
+    }
+
+    private void WriteJsonEvent(string jsonLine) {
+        object lk = ConsoleOutLock ?? _sync;
+        Monitor.Enter(lk);
+        try {
+            Console.Out.WriteLine(jsonLine);
+            Console.Out.Flush();
+        } catch {} finally {
+            Monitor.Exit(lk);
+        }
+    }
+
+    private static string EscapeJson(string s) {
+        if (string.IsNullOrEmpty(s)) return "";
+        StringBuilder sb = new StringBuilder(s.Length + 8);
+        foreach (char c in s) {
+            switch (c) {
+                case '\\': sb.Append("\\\\"); break;
+                case '"': sb.Append("\\\""); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\t': sb.Append("\\t"); break;
+                default:
+                    if (c < 0x20) sb.AppendFormat("\\u{0:x4}", (int)c);
+                    else sb.Append(c);
+                    break;
+            }
+        }
+        return sb.ToString();
     }
 
     // Strictly select ONLY stationary Microphone Array / USB microphone.

@@ -273,7 +273,7 @@ namespace PiperSapi
         {
         }
 
-        public override void RemoveLexicon(Uri uri, string mediaType, ITtsEngineSite site)
+        public override void RemoveLexicon(Uri uri, ITtsEngineSite site)
         {
         }
 

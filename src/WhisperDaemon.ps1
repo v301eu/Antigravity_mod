@@ -319,6 +319,7 @@ public class RamWaveRecorder : IDisposable {
     private const int SAMPLE_RATE = 16000;
     private const int BUFFER_BYTES = 3200; // 100ms of 16kHz 16-bit Mono PCM for Whisper
     private const int NUM_BUFFERS = 8;
+    private const double VAD_RMS_THRESHOLD = 45.0;
 
     private IntPtr _hWaveIn = IntPtr.Zero;
     private WaveInProc _callback;
@@ -505,7 +506,8 @@ public class RamWaveRecorder : IDisposable {
                 }
 
                 double rms = ComputeRms(chunk);
-                bool isVoice = rms > 420.0;
+                // Built-in array mic with Windows noise suppression: silence is ~0, normal speech ~50-600 RMS.
+                bool isVoice = rms > VAD_RMS_THRESHOLD;
 
                 if (!_vadInSpeech) {
                     _preRoll.Enqueue(chunk);
@@ -564,7 +566,28 @@ public class RamWaveRecorder : IDisposable {
     }
 
     // 16kHz 16-bit Mono WAV wrapper for Whisper AI input in RAM
+    // Boost quiet recordings so the peak reaches ~70% of full scale (max 20x gain) before Whisper.
+    public static byte[] NormalizePcm16(byte[] pcm) {
+        int samples = pcm.Length / 2;
+        int peak = 0;
+        for (int i = 0; i < samples; i++) {
+            int v = Math.Abs((int)(short)(pcm[2 * i] | (pcm[2 * i + 1] << 8)));
+            if (v > peak) peak = v;
+        }
+        if (peak < 50 || peak >= 22000) return pcm;
+        double gain = Math.Min(20.0, 23000.0 / peak);
+        byte[] outPcm = new byte[samples * 2];
+        for (int i = 0; i < samples; i++) {
+            int v = (int)Math.Round((short)(pcm[2 * i] | (pcm[2 * i + 1] << 8)) * gain);
+            if (v > 32767) v = 32767; else if (v < -32768) v = -32768;
+            outPcm[2 * i] = (byte)(v & 0xFF);
+            outPcm[2 * i + 1] = (byte)((v >> 8) & 0xFF);
+        }
+        return outPcm;
+    }
+
     public static byte[] WrapPcmMono16kAsWav(byte[] pcm) {
+        pcm = NormalizePcm16(pcm);
         using (MemoryStream ms = new MemoryStream(44 + pcm.Length))
         using (BinaryWriter bw = new BinaryWriter(ms)) {
             bw.Write(new char[] { 'R', 'I', 'F', 'F' });

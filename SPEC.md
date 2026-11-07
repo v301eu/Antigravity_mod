@@ -10,10 +10,6 @@
    1. **naturalny głos Microsoftu** (3. generacja, offline, np. *Microsoft Ryan* dla angielskiego), jeśli jest zainstalowany dla danego języka;
    2. w przeciwnym razie **neuronowy głos Piper** dla danego języka (np. *MC Speech* / *Darkman* dla polskiego);
    3. jeśli nie ma żadnego — **brakujący głos jest instalowany automatycznie** (patrz §0.7), a do tego czasu TTS milczy i wyświetla komunikat zamiast czytać złym głosem.
-7. **Automatyczna instalacja głosów dla nowych użytkowników.** Rozszerzenie musi działać od razu u każdego, kto je zainstaluje, niezależnie od języka:
-   - przy pierwszym uruchomieniu instaluje głosy dla **języka systemu Windows** oraz dla **angielskiego**;
-   - gdy Whisper rozpozna język, dla którego nie ma głosu (np. francuski, niemiecki), rozszerzenie **samo pobiera głos Piper** dla tego języka (jednorazowo, ok. 60 MB, do folderu rozszerzenia) i od razu go używa;
-   - jeśli dla tego języka istnieje naturalny głos Microsoftu, rozszerzenie dodatkowo **otwiera ustawienia Narratora z propozycją jego instalacji** (Windows nie pozwala zainstalować go po cichu); po instalacji automatycznie przełącza się na głos Microsoftu.
 4. **Model pomocniczy (tańszy) zależny od aktywnego pluginu** — służy do poprawy gramatyki, wzbogacenia słownictwa i prowadzenia dyskusji:
 
    | Plugin czatu | Model główny (drogi) | Model pomocniczy (tani) | Komenda kompaktowania |
@@ -25,6 +21,10 @@
 
 5. **Odporność na aktualizacje** — rozszerzenie nie może polegać na wewnętrznych, nieudokumentowanych elementach VS Code ani pluginów, które zmieniają się z każdą wersją; ścieżki do narzędzi CLI wyszukuje dynamicznie, a nazwy modeli i komend kompaktowania są konfigurowalne w ustawieniach.
 6. **Każdy tekst po korekcie gramatycznej jest odczytywany przez TTS**, zanim (lub w chwili gdy) trafi na czat.
+7. **Automatyczna instalacja głosów dla nowych użytkowników.** Rozszerzenie musi działać od razu u każdego, kto je zainstaluje, niezależnie od języka:
+   - przy pierwszym uruchomieniu instaluje głosy dla **języka systemu Windows** oraz dla **angielskiego**;
+   - gdy Whisper rozpozna język, dla którego nie ma głosu (np. francuski, niemiecki), rozszerzenie **samo pobiera głos Piper** dla tego języka (jednorazowo, ok. 60 MB, do folderu rozszerzenia) i od razu go używa;
+   - jeśli dla tego języka istnieje naturalny głos Microsoftu, rozszerzenie dodatkowo **otwiera ustawienia Narratora z propozycją jego instalacji** (Windows nie pozwala zainstalować go po cichu); po instalacji automatycznie przełącza się na głos Microsoftu.
 
 ---
 

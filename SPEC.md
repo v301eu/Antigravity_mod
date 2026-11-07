@@ -111,7 +111,7 @@ Niezależnie od trybu **A**, **domyślnie włączony** jest automatyczny odczyt 
 2. ~~**Polski głos naturalny offline.**~~ **Rozstrzygnięte** — Piper dopuszczony, gdy brak naturalnego głosu Microsoftu; brakujące głosy instalowane automatycznie (§0.3, §0.7).
    - 2a. ~~Pobieranie bez pytania czy po potwierdzeniu?~~ **Rozstrzygnięte** — pytanie z kodem języka, potem pobranie; Ryan domyślny (§0.3, §0.7).
    - 2c. *Nowe:* przy braku głosu tłumaczenie na angielski dotyczy **tylko odczytu TTS**, a na czat trafia tekst w oryginalnym języku — zgoda? (Alternatywa: na czat też idzie wersja angielska.)
-   - 2b. *Nowe:* gdy w zdaniu mieszają się języki (polski z angielskimi terminami technicznymi), czytamy całość jednym głosem języka dominującego — zgoda?, no dobra to zostawimy piper, ważne aby nowy użytkownij instalujacy plugin whisper_saver miał automatycznie instalowane brakujące głosy, bo rayan cyz piper jest polski ale inni mogę potrzebowac innych głosów, francuski czy niemiecki itp.
+   - 2b. *Nowe:* gdy w zdaniu mieszają się języki (polski z angielskimi terminami technicznymi), czytamy całość jednym głosem języka dominującego — zgoda?
 3. **„Auto TTS w trakcie pisania” (§4.2)** — czy czytać każde zdanie zaraz po jego zakończeniu, czy cały tekst dopiero po dyktowaniu/korekcie?
 4. **Pytanie modelu w polu wprowadzania** — gdy użytkownik zacznie odpowiadać, czy pytanie ma zostać **zastąpione** odpowiedzią, czy odpowiedź ma być **dopisana** pod pytaniem?
 5. **Ikona C a wklejanie** — czy po `Ctrl+C` obraz ma być **automatycznie wklejony** do pola czatu, czy tylko trafić do schowka (wklejasz sam przez `Ctrl+V`)?

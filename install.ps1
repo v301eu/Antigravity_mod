@@ -23,10 +23,15 @@ $tmp = [System.IO.Path]::GetTempPath()
 Get-ChildItem $tmp -Filter "loken_*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 Get-ChildItem $tmp -Filter "ryan_*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
-# 2. Pobierz model OpenAI Whisper Large v3 Turbo (q5_0), jesli nie ma go w bin/
+# 2. Pobierz szybki model do dyktowania w czasie rzeczywistym (ggml-small-q5_1.bin) oraz Whisper Large v3 Turbo, jesli nie ma ich w bin/
 $binSource = Join-Path $root "bin"
 if (-not (Test-Path $binSource)) {
     New-Item -ItemType Directory -Path $binSource -Force | Out-Null
+}
+$fastModel = Join-Path $binSource "ggml-small-q5_1.bin"
+if (-not (Test-Path $fastModel) -or (Get-Item $fastModel).Length -lt 150000000) {
+    Write-Host "[Whisper] Pobieranie szybkiego modelu do dyktowania na zywo (ggml-small-q5_1.bin)..." -ForegroundColor Yellow
+    curl.exe -L --retry 3 -o $fastModel "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin"
 }
 $turboModel = Join-Path $binSource "ggml-large-v3-turbo-q5_0.bin"
 if (-not (Test-Path $turboModel) -or (Get-Item $turboModel).Length -lt 500000000) {

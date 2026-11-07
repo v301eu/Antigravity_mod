@@ -852,7 +852,7 @@ function Start-RamTtsPlayback([string]$rawText, [string]$forceLang, [string]$req
     $ps.Runspace = $rs
 
     $null = $ps.AddScript({
-        param($cleanText, $langHint, $reqId, $myGeneration, $ttsSync, $outLock)
+        param($cleanText, $langHint, $reqId, $myGeneration, $ttsSync, $outLock, $piperExe, $piperPlModel)
 
         function Send-Msg([hashtable]$h) {
             [System.Threading.Monitor]::Enter($outLock)
@@ -944,70 +944,76 @@ function Start-RamTtsPlayback([string]$rawText, [string]$forceLang, [string]$req
         $wavBytes = $null
 
         try {
-            $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
-            $naturalVoices = @($synth.GetInstalledVoices() | Where-Object {
-                $_.Enabled -and (
-                    $_.VoiceInfo.Description -match '\(Natural\)' -or
-                    $_.VoiceInfo.Name -match 'Online' -or
-                    $_.VoiceInfo.Id -match '^MicrosoftWindows\.Voice\.'
-                ) -and ($_.VoiceInfo.Name -notmatch 'Desktop')
-            })
-
-            if ($iso -eq "en") {
-                $v = $naturalVoices | Where-Object { $_.VoiceInfo.Name -eq "Microsoft Ryan" } | Select-Object -First 1
-                if (-not $v) { $v = $naturalVoices | Where-Object { $_.VoiceInfo.Name -match "Ryan" } | Select-Object -First 1 }
-                if ($v) { $voiceName = $v.VoiceInfo.Name }
-            } elseif ($iso -eq "pl") {
-                $v = $naturalVoices | Where-Object { $_.VoiceInfo.Name -match "Marek" } | Select-Object -First 1
-                if (-not $v) { $v = $naturalVoices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq "pl" } | Select-Object -First 1 }
-                if ($v) { $voiceName = $v.VoiceInfo.Name }
-            }
-
-            if (-not $voiceName) {
-                $lv = @($naturalVoices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq $iso })
-                if ($lv.Count -gt 0) {
-                    $m = $lv | Where-Object { $_.VoiceInfo.Gender -eq [System.Speech.Synthesis.VoiceGender]::Male } | Select-Object -First 1
-                    $voiceName = if ($m) { $m.VoiceInfo.Name } else { $lv[0].VoiceInfo.Name }
+            if ($iso -eq "pl" -and $piperExe -and $piperPlModel -and (Test-Path $piperExe) -and (Test-Path $piperPlModel)) {
+                $voiceName = "MC Speech (Local PL)"
+                $ttsSync.State = "Playing"
+                Send-Msg @{
+                    event = "ttsState"
+                    state = "Playing"
+                    voice = $voiceName
+                    device = $targetAudioDevice.Name
+                    lang = $iso
+                    requestId = $reqId
                 }
-            }
-            if (-not $voiceName -and $naturalVoices.Count -gt 0) {
-                $ry = $naturalVoices | Where-Object { $_.VoiceInfo.Name -match "Ryan" } | Select-Object -First 1
-                $voiceName = if ($ry) { $ry.VoiceInfo.Name } else { $naturalVoices[0].VoiceInfo.Name }
-            }
+                $wavBytes = [RamWaveRecorder]::SynthesizePiperStereo48kWav($piperExe, $piperPlModel, $cleanText, 22050)
+            } else {
+                $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+                $localVoices = @($synth.GetInstalledVoices() | Where-Object {
+                    $_.Enabled -and ($_.VoiceInfo.Name -notmatch 'Online')
+                })
 
-            if (-not $voiceName) {
+                if ($iso -eq "en") {
+                    $v = $localVoices | Where-Object { $_.VoiceInfo.Name -eq "Microsoft Ryan" } | Select-Object -First 1
+                    if (-not $v) { $v = $localVoices | Where-Object { $_.VoiceInfo.Name -match "Ryan" } | Select-Object -First 1 }
+                    if ($v) { $voiceName = $v.VoiceInfo.Name }
+                }
+
+                if (-not $voiceName) {
+                    $lv = @($localVoices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq $iso })
+                    if ($lv.Count -gt 0) {
+                        $m = $lv | Where-Object { $_.VoiceInfo.Gender -eq [System.Speech.Synthesis.VoiceGender]::Male } | Select-Object -First 1
+                        $voiceName = if ($m) { $m.VoiceInfo.Name } else { $lv[0].VoiceInfo.Name }
+                    }
+                }
+                if (-not $voiceName -and $localVoices.Count -gt 0) {
+                    $ry = $localVoices | Where-Object { $_.VoiceInfo.Name -match "Ryan" } | Select-Object -First 1
+                    $voiceName = if ($ry) { $ry.VoiceInfo.Name } else { $localVoices[0].VoiceInfo.Name }
+                }
+
+                if (-not $voiceName) {
+                    $synth.Dispose()
+                    throw "Brak zainstalowanego lokalnego glosu offline."
+                }
+
+                $synth.SelectVoice($voiceName)
+                $synth.Rate = 0
+
+                $ttsSync.State = "Playing"
+                Send-Msg @{
+                    event = "ttsState"
+                    state = "Playing"
+                    voice = $voiceName
+                    device = $targetAudioDevice.Name
+                    lang = $iso
+                    requestId = $reqId
+                }
+
+                # 2. Synthesize strictly as Stereo, 16-bit, 48000 Hz, 2-channel PCM in pure RAM
+                $pcmStream = New-Object System.IO.MemoryStream
+                $fmt48kStereo = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(
+                    48000,
+                    [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen,
+                    [System.Speech.AudioFormat.AudioChannel]::Stereo
+                )
+                $synth.SetOutputToAudioStream($pcmStream, $fmt48kStereo)
+                $synth.Speak($cleanText)
+                $rawPcm = $pcmStream.ToArray()
+                $pcmStream.Dispose()
                 $synth.Dispose()
-                throw "Brak zainstalowanego glosu Microsoft Natural 3. generacji."
-            }
 
-            $synth.SelectVoice($voiceName)
-            $synth.Rate = 0
-
-            $ttsSync.State = "Playing"
-            Send-Msg @{
-                event = "ttsState"
-                state = "Playing"
-                voice = $voiceName
-                device = $targetAudioDevice.Name
-                lang = $iso
-                requestId = $reqId
-            }
-
-            # 2. Synthesize strictly as Stereo, 16-bit, 48000 Hz, 2-channel PCM in pure RAM
-            $pcmStream = New-Object System.IO.MemoryStream
-            $fmt48kStereo = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(
-                48000,
-                [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen,
-                [System.Speech.AudioFormat.AudioChannel]::Stereo
-            )
-            $synth.SetOutputToAudioStream($pcmStream, $fmt48kStereo)
-            $synth.Speak($cleanText)
-            $rawPcm = $pcmStream.ToArray()
-            $pcmStream.Dispose()
-            $synth.Dispose()
-
-            if ($rawPcm -and $rawPcm.Length -gt 0) {
-                $wavBytes = [RamWaveRecorder]::WrapPcmStereo48kAsWav($rawPcm)
+                if ($rawPcm -and $rawPcm.Length -gt 0) {
+                    $wavBytes = [RamWaveRecorder]::WrapPcmStereo48kAsWav($rawPcm)
+                }
             }
         } catch {
             if ($ttsSync.Generation -eq $myGeneration) {
@@ -1143,7 +1149,7 @@ function Start-RamTtsPlayback([string]$rawText, [string]$forceLang, [string]$req
                 if ($reqId) { Send-Msg @{ event = "ttsFinished"; requestId = $reqId } }
             }
         }
-    }).AddArgument($clean).AddArgument($forceLang).AddArgument($requestId).AddArgument($myGen).AddArgument($script:ttsSync).AddArgument($script:outLock)
+    }).AddArgument($clean).AddArgument($forceLang).AddArgument($requestId).AddArgument($myGen).AddArgument($script:ttsSync).AddArgument($script:outLock).AddArgument($script:piperExe).AddArgument($script:piperPlModel)
 
     $null = $ps.BeginInvoke()
 }

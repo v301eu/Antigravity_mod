@@ -1,4 +1,4 @@
-﻿param([switch]$CompileOnly)
+param([switch]$CompileOnly)
 # whisper_saver: Interactive Screen Snipping, Drawing & 768px RAM Compression Overlay
 # Pure RAM operation (zero temporary files on disk). Ctrl+C compresses to max 768px, copies to Clipboard, and closes automatically.
 

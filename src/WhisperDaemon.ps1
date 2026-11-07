@@ -1,4 +1,4 @@
-﻿param(
+param(
     [int]$WhisperPort = 18971,
     [switch]$CompileOnly
 )
@@ -320,7 +320,8 @@ public class RamWaveRecorder : IDisposable {
     private const int SAMPLE_RATE = 16000;
     private const int BUFFER_BYTES = 3200; // 100ms of 16kHz 16-bit Mono PCM for Whisper
     private const int NUM_BUFFERS = 8;
-    private const double VAD_RMS_THRESHOLD = 18.0;
+    // Quiet room + Windows noise suppression: silence is ~0 RMS, so a very low threshold catches soft speech.
+    private const double VAD_RMS_THRESHOLD = 8.0;
 
     private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
 
